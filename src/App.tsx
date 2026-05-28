@@ -24,9 +24,11 @@ import {
   Calculator,
   Send,
   ArrowRight,
-  Sparkle
+  Sparkle,
+  ChevronDown,
+  ExternalLink
 } from "lucide-react";
-import { MaterialCategory, SupplyRegion, MaterialItem, Supplier } from "./types.js";
+import { MaterialCategory, SupplyRegion, MaterialItem, Supplier, SearchResultItem } from "./types.js";
 import { QuantityCalculator } from "./components/QuantityCalculator.js";
 import { LeadCaptureForm } from "./components/LeadCaptureForm.js";
 
@@ -54,13 +56,13 @@ function ShorefireLogo({ size = "lg" }: { size?: "sm" | "md" | "lg" }) {
 
   if (size === "sm") {
     return (
-      <div className="flex items-center gap-1.5 select-none">
+      <div className="flex items-center gap-2 select-none">
         {/* Shield Icon */}
-        <svg className="w-6 h-6 shrink-0" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg className="w-6.5 h-6.5 shrink-0" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M15 15 H85 V46 C85 70 50 90 50 90 C50 90 15 70 15 46 V15Z" fill="#ae2424" />
           <path d="M30 48 L46 64 L70 32" stroke="white" strokeWidth="9" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        <span className="text-xl font-display font-extrabold text-slate-950 tracking-tight">
+        <span className="text-xl font-display font-extrabold text-[#ae2424] tracking-tight flex items-center">
           Sh
           <span className="relative inline-flex items-center justify-center mx-px">
             <svg className="w-4 h-4" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -76,10 +78,10 @@ function ShorefireLogo({ size = "lg" }: { size?: "sm" | "md" | "lg" }) {
 
   return (
     <div className="flex flex-col items-center select-none text-center">
-      <div className="flex items-center gap-2 md:gap-3.5">
+      <div className="flex items-center gap-3 md:gap-4">
         {/* Core Shield-Tick Icon */}
         <svg 
-          className={`${isLg ? "w-16 h-16" : "w-12 h-12"} shrink-0 drop-shadow-sm`} 
+          className={`${isLg ? "w-16 h-16 md:w-20 md:h-20" : "w-12 h-12"} shrink-0 drop-shadow-sm`} 
           viewBox="0 0 100 100" 
           fill="none" 
           xmlns="http://www.w3.org/2000/svg"
@@ -89,7 +91,7 @@ function ShorefireLogo({ size = "lg" }: { size?: "sm" | "md" | "lg" }) {
         </svg>
         
         {/* Sleek, Wordmark matching screenshot */}
-        <span className={`${isLg ? "text-5xl md:text-6xl" : "text-4xl"} font-display font-extrabold text-slate-900 tracking-tighter flex items-center`}>
+        <span className={`${isLg ? "text-5xl md:text-6xl" : "text-4xl"} font-display font-black text-[#ae2424] tracking-tight flex items-center`}>
           Sh
           {/* Nested mini-shield inside the 'o' */}
           <span className="relative inline-flex items-center justify-center mx-0.5">
@@ -108,8 +110,8 @@ function ShorefireLogo({ size = "lg" }: { size?: "sm" | "md" | "lg" }) {
       </div>
       
       {/* Target subtext aligned directly beneath wordmark */}
-      <div className="w-full flex justify-center md:justify-end pl-0 md:pl-28 mt-1.5">
-        <p className={`${isLg ? "text-xs tracking-[0.25em]" : "text-[10px] tracking-widest"} text-[#ae2424] font-bold font-sans uppercase`}>
+      <div className="w-full flex justify-center md:justify-end pl-0 md:pl-28 mt-2">
+        <p className={`${isLg ? "text-sm tracking-[0.25em]" : "text-[11px] tracking-widest"} text-[#ae2424]/80 font-medium font-sans`}>
           ....Built for you
         </p>
       </div>
@@ -130,6 +132,9 @@ export default function App() {
   
   // Search state result
   const [aiAnswer, setAiAnswer] = useState("");
+  const [featuredAnswer, setFeaturedAnswer] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
+  const [expandedResults, setExpandedResults] = useState<Record<string, boolean>>({});
   const [groundingSources, setGroundingSources] = useState<{ title: string; uri: string }[]>([]);
   const [apiLogs, setApiLogs] = useState<{ supplierId: string; supplierName: string; status: "success" | "offline" | "slow"; latencyMs: number; stockFound: number }[]>([]);
   const [localMaterials, setLocalMaterials] = useState<MaterialItem[]>([]);
@@ -192,7 +197,10 @@ export default function App() {
       }
 
       const result = await response.json();
-      setAiAnswer(result.answer);
+      setAiAnswer(result.answer || "");
+      setFeaturedAnswer(result.featuredAnswer || result.answer || "");
+      setSearchResults(result.searchResults || []);
+      setExpandedResults({});
       setGroundingSources(result.groundingSources || []);
       setApiLogs(result.simulatedApiLogs || []);
       setLocalMaterials(result.localMaterials || []);
@@ -596,36 +604,147 @@ export default function App() {
                   <div className="lg:col-span-2 space-y-6">
                     
                     {/* Primary expert AI Response */}
-                    <div className="bg-white rounded-3xl border border-stone-200/60 shadow-md p-6 sm:p-8 space-y-4">
+                    <div className="bg-white rounded-3xl border border-stone-200/60 shadow-md p-6 sm:p-8 space-y-5">
                       
                       <div className="flex items-center justify-between border-b border-stone-100 pb-4">
                         <div className="flex items-center gap-2.5">
                           <div className="h-9 w-9 rounded-xl bg-red-50 flex items-center justify-center text-brand-primary">
-                            <Cpu className="h-5 w-5" />
+                            <Cpu className="h-5 w-5 animate-pulse" />
                           </div>
                           <div>
-                            <h2 className="text-sm font-extrabold text-slate-800 uppercase tracking-widest">Shorefire Structural AI Summary</h2>
-                            <p className="text-[10px] text-stone-400 tracking-wider uppercase font-semibold mt-0.5">Grounded Civil Engineering Analysis</p>
+                            <h2 className="text-sm font-extrabold text-slate-800 uppercase tracking-widest">Shurefire Structural Live Summary</h2>
+                            <p className="text-[10px] text-stone-400 tracking-wider uppercase font-semibold mt-0.5">Sovereign Direct Wholesalers Intelligence</p>
                           </div>
                         </div>
                         
                         <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-md">
-                          ✓ INDEX STABLE
+                          ✓ ACTIVE INDEX
                         </span>
                       </div>
 
                       {isLoading ? (
                         <div className="py-16 flex flex-col items-center justify-center gap-3">
                           <div className="h-8 w-8 border-4 border-brand-primary border-t-transparent rounded-full animate-spin" />
-                          <p className="text-xs text-stone-400 font-medium tracking-wide">Compiling matching terminal rates and engineering guidelines...</p>
+                          <p className="text-xs text-stone-400 font-medium tracking-wide">Retrieving terminal rates and compiling real-time insights...</p>
                         </div>
                       ) : (
-                        <div className="text-stone-700 text-sm leading-relaxed prose prose-stone max-w-none">
-                          <Markdown>{aiAnswer}</Markdown>
+                        <div className="space-y-6">
+                          
+                          {/* Google Featured Snippet (Main answer) */}
+                          <div className="bg-white border-2 border-slate-100 shadow-sm p-5 sm:p-6 rounded-2xl space-y-4 font-sans relative overflow-hidden">
+                            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-red-500 via-stone-200 to-emerald-500" />
+                            <div className="flex items-center justify-between text-[11px] text-stone-400 font-semibold tracking-wider uppercase mb-1">
+                              <span>Google Featured Snippet Reference</span>
+                              <span className="text-red-600 bg-red-50 border border-red-100/50 px-2 py-0.5 rounded">High Authority Answer</span>
+                            </div>
+
+                            {/* Un-hyperlinked Result Title matching prompt */}
+                            <h3 className="text-lg sm:text-xl font-bold text-slate-800 leading-snug font-sans pb-2 border-b border-stone-100">
+                              {query ? `Optimized structural advice & guidelines on: "${query}"` : "Shorefire Sourcing Hub Knowledge Panel"}
+                            </h3>
+
+                            {/* Featured snippet summary prose */}
+                            <div className="text-stone-800 text-sm leading-relaxed prose prose-stone max-w-none pt-1">
+                              <Markdown>{featuredAnswer || aiAnswer}</Markdown>
+                            </div>
+
+                            <div className="text-[10px] text-stone-400 italic pt-2 border-t border-stone-50/60 flex items-center justify-between">
+                              <span>Source: Shorefire Real-World Sourcing Index & Technical Advisory Panel</span>
+                              <span className="font-semibold text-emerald-600">✓ Grounded with Google Search</span>
+                            </div>
+                          </div>
+
+                          {/* 10 Google-style search engine results */}
+                          <div className="space-y-6 pt-2">
+                            <div className="flex items-center gap-2 border-b border-stone-100 pb-2">
+                              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Web Search Results</h3>
+                              <span className="text-[10px] bg-stone-100 text-stone-500 px-1.5 rounded-full font-bold">10 active matches</span>
+                            </div>
+
+                            {searchResults && searchResults.length > 0 ? (
+                              <div className="space-y-5">
+                                {searchResults.map((result: SearchResultItem, idx: number) => {
+                                  const isExpanded = !!expandedResults[result.id];
+                                  const isShurefireLink = result.url?.includes("wa.me") || result.siteName?.toLowerCase().includes("shurefire");
+
+                                  return (
+                                    <div 
+                                      key={result.id || idx} 
+                                      className={`pb-5 border-b border-stone-100/70 last:border-0 hover:bg-stone-50/20 p-2.5 rounded-xl transition-all ${
+                                        isShurefireLink ? "bg-emerald-50/30 border border-emerald-100/40 p-4 rounded-xl shadow-xs" : ""
+                                      }`}
+                                    >
+                                      {/* Source Web Domain Breadcrumb */}
+                                      <div className="flex items-center gap-2 text-xs text-[#202124] mb-1">
+                                        <div className={`h-4.5 w-4.5 rounded-full flex items-center justify-center text-[10px] ${
+                                          isShurefireLink ? "bg-emerald-100 text-emerald-800" : "bg-stone-100 text-stone-600"
+                                        } font-bold shrink-0`}>
+                                          {isShurefireLink ? "💬" : "🌐"}
+                                        </div>
+                                        <div className="flex items-center gap-1 flex-wrap font-medium">
+                                          <span className="text-slate-800 font-bold">{result.siteName}</span>
+                                          <span className="text-stone-400 font-normal">›</span>
+                                          <span className="text-stone-500 font-mono text-[10px] truncate max-w-[200px] sm:max-w-xs">{result.url}</span>
+                                        </div>
+                                      </div>
+
+                                      {/* Google Result Title: NOT hyperlinked as requested, click toggles expand */}
+                                      <div 
+                                        onClick={() => setExpandedResults(prev => ({ ...prev, [result.id]: !prev[result.id] }))}
+                                        className="group cursor-pointer block leading-snug font-sans select-none"
+                                      >
+                                        <h3 className={`text-[16px] sm:text-[18px] ${
+                                          isShurefireLink ? "text-emerald-800 font-bold" : "text-[#1a0dab] group-hover:underline"
+                                        } leading-normal transition-all flex items-center gap-1.5`}>
+                                          <span>{result.title}</span>
+                                          <ChevronDown className={`h-4 w-4 shrink-0 transition-transform text-slate-400 ${
+                                            isExpanded ? "rotate-180 text-brand-primary" : ""
+                                          }`} />
+                                        </h3>
+                                      </div>
+
+                                      {/* Snippet summary Paragraph */}
+                                      <p className="text-xs sm:text-sm text-[#4d5156] mt-1 leading-relaxed">
+                                        {result.snippet}
+                                      </p>
+
+                                      {/* Expandable detailed content section */}
+                                      {isExpanded && (
+                                        <div className="mt-3 bg-stone-50/60 border border-stone-100 p-4 rounded-xl text-stone-800 text-xs sm:text-sm leading-relaxed shadow-inner space-y-3 animate-fadeIn">
+                                          <div className="prose prose-stone max-w-none text-stone-700 font-sans">
+                                            <Markdown>{result.fullContent}</Markdown>
+                                          </div>
+                                          
+                                          {isShurefireLink && (
+                                            <div className="pt-2 flex flex-wrap gap-2 items-center">
+                                              <a
+                                                href="https://wa.me/2349023089987"
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-sm transition-all cursor-pointer inline-flex"
+                                              >
+                                                <span>💬 Send Direct Inquiry on WhatsApp (09023089987)</span>
+                                                <ExternalLink className="h-3.5 w-3.5" />
+                                              </a>
+                                              <span className="text-[11px] text-stone-400 font-semibold italic">Broker-free pricing matched instantly</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="py-6 text-center text-sm text-stone-400">
+                                No additional indexed pages matching query. Enter terms above to expand.
+                              </div>
+                            )}
+                          </div>
 
                           {groundingSources.length > 0 && (
-                            <div className="mt-8 pt-6 border-t border-stone-100 space-y-2">
-                              <h4 className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Independent Grounding Web Citations</h4>
+                            <div className="pt-4 border-t border-stone-100 space-y-2">
+                              <h4 className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Indexed Google Reference Citations:</h4>
                               <div className="flex flex-wrap gap-2 pt-1">
                                 {groundingSources.map((source, idx) => (
                                   <a
@@ -646,39 +765,6 @@ export default function App() {
                         </div>
                       )}
 
-                    </div>
-
-                    {/* LIVE DEV TERMINAL DIAGNOSTICS LOGS */}
-                    <div className="bg-[#1A1817] text-stone-200 rounded-3xl p-5 font-mono text-xs border border-stone-800 shadow-md space-y-3">
-                      <div className="flex items-center justify-between border-b border-stone-800/80 pb-2.5">
-                        <div className="flex items-center gap-2">
-                          <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                          <span className="font-bold uppercase tracking-widest text-[9px] text-stone-400">Inventory Sync Diagnostics Console</span>
-                        </div>
-                        <span className="text-[9px] text-stone-500">LAGOS & ABUJA GATEWAYS</span>
-                      </div>
-                      
-                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                        {apiLogs.map((log, idx) => (
-                          <div key={idx} className="flex items-center justify-between gap-4 py-0.5">
-                            <span className="text-stone-300">
-                              &gt; API Ping <span className="text-[#ae2424]">{log.supplierName}</span> ...
-                            </span>
-                            <span>
-                              {log.status === "offline" ? (
-                                <span className="text-red-500 font-bold bg-[#3B1C1A] px-1.5 py-0.5 rounded text-[10px]">TIMEOUT</span>
-                              ) : (
-                                <span className="text-emerald-400">
-                                  CONNECTED ({log.latencyMs}ms) | <span className="text-stone-300">Sync Inventory: {log.stockFound}</span>
-                                </span>
-                              )}
-                            </span>
-                          </div>
-                        ))}
-                        <div className="text-[10px] text-stone-500 pt-1.5 border-t border-stone-800/80">
-                          &gt;&gt; Sync complete. Realtime terminal inventory catalog size: {localMaterials.length} index matches.
-                        </div>
-                      </div>
                     </div>
 
                   </div>

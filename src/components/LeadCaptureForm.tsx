@@ -64,7 +64,7 @@ export function LeadCaptureForm({
       id: leadId,
       name: name.trim().substring(0, 150),
       phone: phone.trim().substring(0, 50),
-      email: email.trim() ? email.trim().substring(0, 150) : "no-email@shurefire.com",
+      email: email.trim() ? email.trim().substring(0, 150) : "no-email@shorefire.com",
       category: category || "General Sourcing",
       region: region || "Lagos",
       materialsNeeded: (materialsNeeded.trim() || `Sourcing query: ${category}`).substring(0, 3000),
@@ -81,9 +81,9 @@ export function LeadCaptureForm({
       setIsSuccess(true);
       
       // Auto-populate custom logging
-      console.log(`[Shurefire Network Sourcing Engine] Successfully logged Lead: ${leadId}`);
+      console.log(`[Shorefire Network Sourcing Engine] Successfully logged Lead: ${leadId}`);
     } catch (err) {
-      console.error("[Shurefire Network Sourcing Engine] Failed to dispatch sourcing document: ", err);
+      console.error("[Shorefire Network Sourcing Engine] Failed to dispatch sourcing document: ", err);
       try {
         handleFirestoreError(err, OperationType.CREATE, `leads/${leadId}`);
       } catch (formattedErr: any) {
@@ -144,7 +144,7 @@ export function LeadCaptureForm({
               </p>
               
               <a 
-                href="http://shurefire.com.ng" 
+                href="http://shorefire.com.ng" 
                 target="_blank" 
                 rel="noreferrer"
                 className="inline-flex items-center gap-1.5 text-xs font-bold text-brand-primary hover:text-brand-accent mt-1 hover:underline group"
@@ -321,19 +321,19 @@ export function LeadCaptureForm({
               )}
             </button>
 
-            {/* Direct outbound link drive to Shurefire */}
+            {/* Direct outbound link drive to Shorefire */}
             <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap text-[11px] text-slate-400 font-medium">
               <span className="flex items-center gap-1">
                 <ShieldCheck className="h-3.5 w-3.5 text-slate-300" />
                 <span>Zero spam, direct merchant lookup</span>
               </span>
               <a 
-                href="http://shurefire.com.ng" 
+                href="http://shorefire.com.ng" 
                 target="_blank" 
                 rel="noreferrer"
                 className="text-brand-primary hover:underline font-bold flex items-center gap-1 group"
               >
-                <span>Or dial wholesalers on Shurefire.com.ng</span>
+                <span>Or dial wholesalers on Shorefire.com.ng</span>
                 <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
               </a>
             </div>

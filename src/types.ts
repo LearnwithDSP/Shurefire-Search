@@ -52,8 +52,19 @@ export interface GroundingSource {
   uri: string;
 }
 
+export interface SearchResultItem {
+  id: string;
+  title: string;
+  snippet: string;
+  fullContent: string;
+  url: string;
+  siteName: string;
+}
+
 export interface AISearchResult {
   answer: string;
+  featuredAnswer: string;
+  searchResults?: SearchResultItem[];
   groundingSources: GroundingSource[];
   simulatedApiLogs: {
     supplierId: string;

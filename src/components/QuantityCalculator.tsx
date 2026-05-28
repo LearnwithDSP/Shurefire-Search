@@ -275,7 +275,7 @@ export function QuantityCalculator() {
               <div className="bg-amber-50/60 rounded-xl p-4 border border-amber-100/50 flex gap-3 text-xs leading-relaxed text-amber-900">
                 <Coins className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-bold uppercase tracking-wider text-[10px] text-amber-800 mb-0.5">Shurefire Site Optimizations</p>
+                  <p className="font-bold uppercase tracking-wider text-[10px] text-amber-800 mb-0.5">Shorefire Site Optimizations</p>
                   <p className="text-slate-600 font-medium">{result.reassuringNotes}</p>
                 </div>
               </div>
@@ -285,7 +285,7 @@ export function QuantityCalculator() {
             <div className="mt-8 pt-6 border-t border-slate-100 space-y-4">
               <div className="text-center max-w-md mx-auto">
                 <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest">💸 Get Cheap Wholesale Rates</h4>
-                <p className="text-xs text-slate-500 mt-1">Submit your calculated estimate list directly to the Shurefire dealer network to lock in off-market supplier quotes.</p>
+                <p className="text-xs text-slate-500 mt-1">Submit your calculated estimate list directly to the Shorefire dealer network to lock in off-market supplier quotes.</p>
               </div>
               <LeadCaptureForm 
                 initialMaterials={`Calculated Sourcing List for "${result.projectName || "Slab Construction"}" (${lengthMs}m x ${widthMs}m, ${numFloors} stories):\n` +
