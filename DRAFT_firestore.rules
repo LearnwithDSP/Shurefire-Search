@@ -123,8 +123,8 @@ service cloud.firestore {
     // Collection: Search answer caches
     match /search_cache/{cacheId} {
       allow read: if true; // Instant lookup for frequent searches
-      allow create: if isValidSearchCache(incoming()) && isValidId(cacheId);
-      allow update, delete: if false; // Write-once (Immutability guarantee to prevent cache pollution)
+      allow create, update: if isValidSearchCache(incoming()) && isValidId(cacheId);
+      allow delete: if false; // Prevention of cache pollution deletion
     }
 
     // Collection: Sourcing and Quote Leads

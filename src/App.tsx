@@ -49,39 +49,45 @@ const REGIONS: SupplyRegion[] = [
 
 const CATEGORIES = Object.values(MaterialCategory);
 
-// Custom SVG Shorefire Logo mirroring the attached graphic
-// Custom SVG Shorefire Logo with a high-end Silicon valley feel
+// Custom SVG Shorefire Logo mirroring the attached graphic exactly
 function ShorefireLogo({ size = "lg" }: { size?: "sm" | "md" | "lg" }) {
   const isLg = size === "lg";
   const isSm = size === "sm";
 
   return (
-    <div className="flex items-center gap-3 select-none text-left font-sans">
-      {/* Pristine Modern Minimalist Shield Icon */}
-      <div className={`shrink-0 flex items-center justify-center rounded-2xl bg-brand-primary text-white shadow-xl shadow-brand-primary/15 ${
-        isSm ? "h-9 w-9 rounded-xl" : isLg ? "h-14 w-14" : "h-11 w-11"
-      }`}>
-        <svg 
-          className={isSm ? "w-5 h-5" : isLg ? "w-8 h-8" : "w-6.5 h-6.5"} 
-          viewBox="0 0 100 100" 
-          fill="none" 
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <path d="M15 15 H85 V46 C85 70 50 90 50 90 C50 90 15 70 15 46 V15Z" fill="white" />
-          <path d="M30 48 L46 64 L70 32" stroke="var(--color-brand-primary)" strokeWidth="10" strokeLinecap="round" strokeLinejoin="round" />
+    <div className={`flex items-center select-none text-left font-sans ${isSm ? "gap-2" : isLg ? "gap-4" : "gap-3"}`}>
+      {/* 1. Large Red Shield Logo Icon */}
+      <div className={`shrink-0 ${isSm ? "h-9 w-9" : isLg ? "h-16 w-16" : "h-12 w-12"}`}>
+        <svg viewBox="0 0 100 100" className="w-full h-full" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M6 4 H94 V50 C94 76, 50 96, 50 96 C50 96, 6 76, 6 50 V4 Z" fill="#a71d1d" />
+          <path d="M12 36 L42 74 L88 18" stroke="white" strokeWidth="15" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </div>
-      
-      <div className="flex flex-col">
-        <span className={`font-display font-bold text-slate-900 tracking-tight leading-none ${
-          isSm ? "text-base" : isLg ? "text-3xl" : "text-xl"
+
+      {/* 2. Text Brand Assembly */}
+      <div className="flex flex-col justify-center">
+        {/* Sh + Small Shield representing 'o' / 'u' + refire */}
+        <div className={`flex items-center font-bold font-sans text-[#a71d1d] tracking-tight leading-none ${
+          isSm ? "text-[19px]" : isLg ? "text-[42px]" : "text-[26px]"
         }`}>
-          Shore<span className="text-brand-primary">fire</span>
-        </span>
-        <span className={`text-stone-400 font-mono tracking-wider font-semibold uppercase mt-1 ${
-          isSm ? "text-[8px]" : isLg ? "text-[10px]" : "text-[9px]"
+          <span className="font-extrabold">Sh</span>
+          {/* Small checkmarked shield */}
+          <div className={`shrink-0 mx-[1.5px] ${
+            isSm ? "h-[14px] w-[14px] mt-[1.5px]" : isLg ? "h-[29px] w-[29px] mt-[3px]" : "h-[18px] w-[18px] mt-[2px]"
+          }`}>
+            <svg viewBox="0 0 100 100" className="w-full h-full" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M6 4 H94 V50 C94 76, 50 96, 50 96 C50 96, 6 76, 6 50 V4 Z" fill="#a71d1d" />
+              <path d="M12 36 L42 74 L88 18" stroke="white" strokeWidth="15" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <span className="font-extrabold">refire</span>
+        </div>
+        
+        {/* Tagline */}
+        <span className={`text-[#8C3A3A] font-sans tracking-wide font-medium mt-0.5 whitespace-nowrap opacity-90 ${
+          isSm ? "text-[7.5px]" : isLg ? "text-[12.5px]" : "text-[9.5px]"
         }`}>
-          Direct Material Ledger
+          ....Built for you
         </span>
       </div>
     </div>
