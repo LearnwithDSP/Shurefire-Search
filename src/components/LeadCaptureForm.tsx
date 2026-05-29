@@ -95,30 +95,30 @@ export function LeadCaptureForm({
   };
 
   return (
-    <div className="bg-white rounded-2xl border border-rose-100 shadow-xl shadow-rose-50/50 overflow-hidden" id="verified_sourcing_widget">
+    <div className="bg-white rounded-3xl border border-stone-200 shadow-[0_1px_10px_rgba(0,0,0,0.012)] overflow-hidden" id="verified_sourcing_widget">
       
       {/* Visual Header */}
-      <div className="bg-gradient-to-r from-slate-900 via-stone-900 to-brand-primary p-5 text-white flex items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-slate-900 via-stone-900 to-brand-primary p-5 sm:p-6 text-white flex items-center justify-between gap-4 select-none">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-brand-primary/10 rounded-xl text-brand-primary">
-            <Sparkles className="h-5 w-5 animate-pulse" />
+          <div className="p-2.5 bg-brand-primary/10 rounded-xl text-brand-primary border border-brand-primary/20">
+            <Sparkles className="h-5 w-5 animate-pulse-subtle" />
           </div>
           <div>
-            <span className="text-[9px] font-bold text-red-350 uppercase tracking-widest block font-mono">Nigeria Wholesalers Initiative</span>
-            <h3 className="text-base font-display font-semibold">Direct Factory-Price Match Network</h3>
+            <span className="text-[9px] font-bold text-red-100/80 uppercase tracking-widest block font-mono">Nigeria Wholesalers Initiative</span>
+            <h3 className="text-base font-display font-bold tracking-tight">Direct Factory-Price Match Network</h3>
           </div>
         </div>
         
-        <span className="text-[10px] font-bold uppercase tracking-wider bg-brand-primary border border-red-700 text-red-100 px-2 py-1 rounded">
-          🔥 Save up to 22%
+        <span className="text-[10px] font-extrabold uppercase tracking-widest bg-brand-primary border border-brand-accent/50 text-white px-2.5 py-1 rounded">
+          Save 15-22%
         </span>
       </div>
 
       <div className="p-5 sm:p-6 space-y-6">
         
         {/* Subtle Branding explaining partnership */}
-        <p className="text-xs text-slate-500 leading-relaxed font-normal">
-          This system is integrated with the sovereign <strong>Shorefire Wholesale Directory</strong> representing certified block makers, steel yards, and importers in Nigeria. By submitting your specification list below, you bypass standard high retail retail margins and get matched with merchants for direct delivery.
+        <p className="text-xs text-stone-500 leading-relaxed font-normal">
+          This system is integrated with the sovereign <strong className="text-slate-900 font-bold">Shorefire Wholesale Directory</strong> representing certified block makers, steel yards, and importers in Nigeria. By submitting your specification list below, you bypass standard high retail retail margins and get matched with merchants for direct delivery.
         </p>
 
         {isSuccess ? (
