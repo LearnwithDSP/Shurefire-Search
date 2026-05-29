@@ -51,11 +51,13 @@
         "region": { "type": "string", "description": "Filtered region key" },
         "category": { "type": "string", "description": "Filtered category key" },
         "answer": { "type": "string", "description": "AI-generated structured answer response" },
+        "featuredAnswer": { "type": "string", "description": "AI-generated structured featured snippet response" },
+        "searchResults": { "type": "array", "description": "Google Search inspired list of authority result blocks" },
         "lastUpdated": { "type": "string", "format": "date-time", "description": "ISO timestamp of cache write" },
         "materials": { "type": "array", "description": "Deserialized material snapshots matched to standard structure" },
         "apiLogs": { "type": "array", "description": "Simulated live API checking results snapshot" }
       },
-      "required": ["queryKey", "query", "region", "category", "answer", "lastUpdated", "materials", "apiLogs"]
+      "required": ["queryKey", "query", "region", "category", "answer", "featuredAnswer", "searchResults", "lastUpdated", "materials", "apiLogs"]
     },
     "lead": {
       "title": "Procurement Lead",

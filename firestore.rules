@@ -67,13 +67,15 @@ service cloud.firestore {
 
     // Search cache validation helper
     function isValidSearchCache(data) {
-      return data.keys().hasAll(['queryKey', 'query', 'region', 'category', 'answer', 'lastUpdated', 'materials', 'apiLogs'])
-        && data.keys().size() == 8
+      return data.keys().hasAll(['queryKey', 'query', 'region', 'category', 'answer', 'featuredAnswer', 'searchResults', 'lastUpdated', 'materials', 'apiLogs'])
+        && data.keys().size() == 10
         && data.queryKey is string && data.queryKey.size() <= 256
-        && data.query is string && data.query.size() <= 128
-        && data.region is string && data.region.size() <= 64
-        && data.category is string && data.category.size() <= 64
-        && data.answer is string && data.answer.size() <= 10000
+        && data.query is string && data.query.size() <= 512
+        && data.region is string && data.region.size() <= 128
+        && data.category is string && data.category.size() <= 128
+        && data.answer is string && data.answer.size() <= 30000
+        && data.featuredAnswer is string && data.featuredAnswer.size() <= 30000
+        && data.searchResults is list && data.searchResults.size() <= 20
         && data.lastUpdated is string && data.lastUpdated.size() <= 64
         && data.materials is list && data.materials.size() <= 100
         && data.apiLogs is list && data.apiLogs.size() <= 50;

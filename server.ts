@@ -49,7 +49,9 @@ async function startServer() {
       
       // Compute a unique key for the search cache (e.g., q_cement_lagos_cement-binders)
       const sanitizedQuery = queryStr.replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-");
-      const cacheId = `q_${sanitizedQuery || "general"}_${regionStr}_${categoryStr}`.substring(0, 100);
+      const sanitizedRegion = regionStr.replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-");
+      const sanitizedCategory = categoryStr.replace(/[^a-z0-9]/g, "-").replace(/-+/g, "-");
+      const cacheId = `q_${sanitizedQuery || "general"}_${sanitizedRegion || "all"}_${sanitizedCategory || "all"}`.substring(0, 100);
 
       let cachedData: any = null;
       let loadedFromCache = false;
@@ -348,9 +350,9 @@ Generate the Featured Snippet answer and up to 10 distinct, highly informative s
       try {
         const payloadToCache = {
           queryKey: cacheId,
-          query: query || "general",
-          region: region || "Nigeria",
-          category: category || "General",
+          query: (query || "general").substring(0, 480),
+          region: (region || "Nigeria").substring(0, 100),
+          category: (category || "General").substring(0, 100),
           answer: aiAnalysis,
           featuredAnswer,
           searchResults,
