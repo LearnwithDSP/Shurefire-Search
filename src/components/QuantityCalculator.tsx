@@ -396,21 +396,21 @@ export function QuantityCalculator() {
   const progressPercent = Math.round(((currentStep - 1) / (STEPS.length - 1)) * 100);
 
   return (
-    <div className="bg-white rounded-3xl border border-stone-200 shadow-xl overflow-hidden font-sans" id="quantity_calculator_widget">
+    <div className="bg-white border border-slate-200/80 shadow-lg shadow-slate-100 rounded-3xl overflow-hidden font-sans" id="quantity_calculator_widget">
       
       {/* Dynamic Header */}
-      <div className="bg-slate-900 border-b border-slate-800 p-6 text-white flex items-center justify-between">
+      <div className="bg-slate-50/70 border-b border-slate-200/80 p-6 text-slate-900 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-brand-primary rounded-2xl flex items-center justify-center shadow-md">
+          <div className="p-2.5 bg-[#B91C1C] rounded-2xl flex items-center justify-center shadow-md">
             <Calculator className="h-6 w-6 text-white" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[9px] bg-red-600 font-extrabold px-2 py-0.5 rounded tracking-widest text-white uppercase">West Africa Sourcing</span>
-              <span className="text-[10px] text-emerald-400 font-mono font-bold">● ONLINE DIRECT</span>
+              <span className="text-[9px] bg-[#B91C1C] font-extrabold px-2 py-0.5 rounded tracking-widest text-white uppercase">West Africa Sourcing</span>
+              <span className="text-[10px] text-emerald-600 font-mono font-bold">● ONLINE DIRECT</span>
             </div>
-            <h2 className="text-lg font-bold tracking-tight text-white mt-1">Seyi Alao & Partners Cost Estimator</h2>
-            <p className="text-[11px] text-stone-400">Guiding massive structural calculations step-by-step through standard Nigerian site practices</p>
+            <h2 className="text-lg font-bold tracking-tight text-slate-900 mt-1">Seyi Alao & Partners Cost Estimator</h2>
+            <p className="text-[11px] text-slate-500">Guiding massive structural calculations step-by-step through standard Nigerian site practices</p>
           </div>
         </div>
 
@@ -418,7 +418,7 @@ export function QuantityCalculator() {
           <button 
             type="button"
             onClick={resetEstimator}
-            className="text-xs bg-slate-800 hover:bg-slate-700 text-stone-300 font-bold px-4 py-2 rounded-xl transition-all cursor-pointer border border-stone-700"
+            className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-4 py-2 rounded-xl transition-all cursor-pointer border border-slate-200"
           >
             Reset Flow
           </button>
@@ -429,12 +429,12 @@ export function QuantityCalculator() {
         <div className="grid grid-cols-1 lg:grid-cols-12">
           
           {/* LEFT SIDEBAR: Structural Engineer Seymour Advice Row */}
-          <div className="col-span-1 lg:col-span-5 bg-gradient-to-b from-slate-50 to-stone-100/75 p-6 border-b lg:border-b-0 lg:border-r border-stone-200 flex flex-col justify-between">
+          <div className="col-span-1 lg:col-span-5 bg-slate-50/50 p-6 border-b lg:border-b-0 lg:border-r border-slate-200/85 flex flex-col justify-between">
             <div className="space-y-6">
               {/* Seyi Profile */}
               <div className="flex items-center gap-3">
                 <div className="relative">
-                  <div className="h-12 w-12 rounded-full bg-slate-800 flex items-center justify-center text-xl font-bold border-2 border-brand-primary text-white">
+                  <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center text-xl font-bold border-2 border-[#B91C1C] text-slate-950">
                     👨‍💼
                   </div>
                   <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center text-[9px] font-bold text-white">
@@ -442,31 +442,31 @@ export function QuantityCalculator() {
                   </div>
                 </div>
                 <div>
-                  <h3 className="text-sm font-extrabold text-slate-800">Seyi Alao, COREN</h3>
-                  <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Sr. Cost Estimator (20+ Yrs Exp)</p>
-                  <p className="text-[10px] text-brand-primary font-semibold flex items-center gap-1 mt-0.5">
+                  <h3 className="text-sm font-extrabold text-slate-900">Seyi Alao, COREN</h3>
+                  <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Sr. Cost Estimator (20+ Yrs Exp)</p>
+                  <p className="text-[10px] text-[#B91C1C] font-semibold flex items-center gap-1 mt-0.5">
                     <ShieldCheck className="h-3 w-3" /> Lagos & Abuja Regional Auditor
                   </p>
                 </div>
               </div>
 
               {/* Speech bubble */}
-              <div className="relative bg-white p-4 sm:p-5 rounded-2xl border border-stone-200/60 shadow-xs">
-                <div className="absolute top-1/2 -right-2 transform -translate-y-1/2 rotate-45 w-4 h-4 bg-white border-r border-t border-stone-200/60 hidden lg:block" />
-                <div className="absolute -top-2 left-6 transform rotate-45 w-4 h-4 bg-white border-l border-t border-stone-200/60 lg:hidden" />
+              <div className="relative bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="absolute top-1/2 -right-2 transform -translate-y-1/2 rotate-45 w-4 h-4 bg-white border-r border-t border-slate-200 hidden lg:block" />
+                <div className="absolute -top-2 left-6 transform rotate-45 w-4 h-4 bg-white border-l border-t border-slate-200 lg:hidden" />
                 
-                <h4 className="text-[10px] uppercase font-extrabold text-brand-primary tracking-widest mb-1">Site Consultant Insights :</h4>
-                <p className="text-stone-700 text-xs leading-relaxed font-sans italic">
+                <h4 className="text-[10px] uppercase font-extrabold text-[#B91C1C] tracking-widest mb-1">Site Consultant Insights :</h4>
+                <p className="text-slate-600 text-xs leading-relaxed font-sans italic">
                   "{activeStepConfig.engineerTip({ projectType, customProjectType, locationZone, structuralStrength })}"
                 </p>
               </div>
             </div>
 
-            <div className="pt-6 border-t border-stone-200 mt-6 lg:mt-0 space-y-2 select-none">
-              <span className="text-[10px] text-stone-400 font-bold uppercase tracking-widest block">Structural Estimate Progress</span>
+            <div className="pt-6 border-t border-slate-100 mt-6 lg:mt-0 space-y-2 select-none">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest block">Structural Estimate Progress</span>
               <div className="flex items-center gap-3">
-                <div className="flex-1 bg-stone-200 h-2 rounded-full overflow-hidden">
-                  <div className="bg-brand-primary h-full rounded-full transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+                <div className="flex-1 bg-slate-100 h-2 rounded-full overflow-hidden">
+                  <div className="bg-[#B91C1C] h-full rounded-full transition-all duration-300" style={{ width: `${progressPercent}%` }} />
                 </div>
                 <span className="text-xs font-mono font-bold text-slate-700 shrink-0">{progressPercent}%</span>
               </div>
@@ -474,19 +474,19 @@ export function QuantityCalculator() {
           </div>
 
           {/* MAIN INTERACTIVE AREA: STEP CONFIGURATIONS */}
-          <div className="col-span-1 lg:col-span-7 p-6 sm:p-8 space-y-6">
+          <div className="col-span-1 lg:col-span-7 p-6 sm:p-8 space-y-6 bg-white">
             
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-extrabold text-stone-400 uppercase tracking-widest">
+              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest">
                 Question {currentStep} of {STEPS.length}
               </span>
-              <span className="text-[11px] font-bold text-brand-primary flex items-center gap-1.5 bg-red-50 px-2.5 py-1 rounded-full uppercase tracking-wider">
-                <Sparkle className="h-3 w-3 text-brand-primary animate-pulse" /> Progressive Disclosure Mode
+              <span className="text-[11px] font-bold text-[#B91C1C] flex items-center gap-1.5 bg-[#B91C1C]/10 border border-[#B91C1C]/25 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                <Sparkle className="h-3 w-3 text-[#B91C1C] animate-pulse" /> Progressive Disclosure Mode
               </span>
             </div>
 
             <div>
-              <h3 className="text-base sm:text-lg font-bold text-slate-800 tracking-tight">
+              <h3 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
                 {activeStepConfig.subtitle}
               </h3>
             </div>
