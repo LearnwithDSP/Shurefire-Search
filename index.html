@@ -2,25 +2,25 @@
 <html lang="en">
   <head>
     <script>
-      // 1. Declare them with VITE_ prefix for your React/TypeScript code
-      const VITE_SUPABASE_URL = "https://ickghlgpkikwrelabayo.supabase.co";
-      const VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlja2dobGdwa2lrd3JlbGFiYXlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMDM0MjgsImV4cCI6MjA5OTc3OTQyOH0.PdnGKbglH2Yc0tWjnlXEgjr53HN6L9lUals6I0G5Cvc";
+      // 1. Set the exact real credentials
+      const REAL_URL = "https://ickghlgpkikwrelabayo.supabase.co";
+      const REAL_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlja2dobGdwa2lrd3JlbGFiYXlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMDM0MjgsImV4cCI6MjA5OTc3OTQyOH0.PdnGKbglH2Yc0tWjnlXEgjr53HN6L9lUals6I0G5Cvc";
+
+      // 2. Assign standard, Vite, and window globals to catch all possible configurations
+      window.SUPABASE_URL = REAL_URL;
+      window.SUPABASE_ANON_KEY = REAL_KEY;
+      window.VITE_SUPABASE_URL = REAL_URL;
+      window.VITE_SUPABASE_ANON_KEY = REAL_KEY;
       
-      // 2. Declare them without prefix for this local CDN script
-      const SUPABASE_URL = VITE_SUPABASE_URL;
-      const SUPABASE_ANON_KEY = VITE_SUPABASE_ANON_KEY;
+      const SUPABASE_URL = REAL_URL;
+      const SUPABASE_ANON_KEY = REAL_KEY;
+      const VITE_SUPABASE_URL = REAL_URL;
+      const VITE_SUPABASE_ANON_KEY = REAL_KEY;
 
-      // Expose them globally on the window object so all files can see them
-      window.SUPABASE_URL = SUPABASE_URL;
-      window.SUPABASE_ANON_KEY = SUPABASE_ANON_KEY;
-      window.VITE_SUPABASE_URL = VITE_SUPABASE_URL;
-      window.VITE_SUPABASE_ANON_KEY = VITE_SUPABASE_ANON_KEY;
-
-      // Initialize Supabase Client
+      // 3. Initialize CDN-level Supabase client if used in index.html
       if (typeof supabase !== 'undefined') {
         const { createClient } = supabase;
-        const dbClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        window.dbClient = dbClient;
+        window.dbClient = createClient(REAL_URL, REAL_KEY);
       }
     </script>
   </head>
