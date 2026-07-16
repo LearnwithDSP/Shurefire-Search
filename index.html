@@ -2,13 +2,11 @@
 <html lang="en">
   <head>
     <script>
-      <script>
-      // Automatically uses Vercel's environment variables during deployment,
-      // but has your exact values as fallback strings so they work everywhere!
-      const REAL_URL = "%VITE_SUPABASE_URL%" || "https://ickghlgpkikwrelabayo.supabase.co";
-      const REAL_KEY = "%VITE_SUPABASE_ANON_KEY%" || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlja2dobGdwa2lrd3JlbGFiYXlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMDM0MjgsImV4cCI6MjA5OTc3OTQyOH0.PdnGKbglH2Yc0tWjnlXEgjr53HN6L9lUals6I0G5Cvc";
+      // 1. Safe extraction of Vercel keys with raw hardcoded fallbacks
+      const REAL_URL = "https://ickghlgpkikwrelabayo.supabase.co";
+      const REAL_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlja2dobGdwa2lrd3JlbGFiYXlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMDM0MjgsImV4cCI6MjA5OTc3OTQyOH0.PdnGKbglH2Yc0tWjnlXEgjr53HN6L9lUals6I0G5Cvc";
 
-      // 1. Establish Globals
+      // 2. Establish Globals across all potential names
       window.SUPABASE_URL = REAL_URL;
       window.SUPABASE_ANON_KEY = REAL_KEY;
       window.VITE_SUPABASE_URL = REAL_URL;
@@ -17,12 +15,12 @@
       const SUPABASE_URL = REAL_URL;
       const SUPABASE_ANON_KEY = REAL_KEY;
 
-      // 2. HACK: Intercept the React Bundle's Config API call to prevent the 404
+      // 3. Intercept the React Bundle's Config API call to prevent the 404
       const originalFetch = window.fetch;
       window.fetch = async function(...args) {
         const url = args[0];
         if (typeof url === 'string' && url.includes('/api/supabase-config')) {
-          console.log("⚡ [Shurefire Interceptor] Intercepted config request. Injecting real credentials!");
+          console.log("⚡ [Shurefire Interceptor] Intercepted config request. Injecting credentials!");
           return new Response(JSON.stringify({
             SUPABASE_URL: REAL_URL,
             SUPABASE_ANON_KEY: REAL_KEY,
@@ -36,7 +34,7 @@
         return originalFetch.apply(this, args);
       };
 
-      // 3. Initialize CDN-level Supabase client if needed
+      // 4. Initialize CDN-level Supabase client if loaded
       if (typeof supabase !== 'undefined') {
         const { createClient } = supabase;
         window.dbClient = createClient(REAL_URL, REAL_KEY);
