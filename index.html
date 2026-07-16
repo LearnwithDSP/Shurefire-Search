@@ -4,6 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Shurefire | Sovereign Materials Intelligence & Direct Factory Match Network</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Supabase JS Client CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Configuration Variables and Client Initialization -->
+    <script>
+      const SUPABASE_URL = "YOUR_SUPABASE_URL_HERE";
+      const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY_HERE";
+      // Initialize Supabase Client
+      if (typeof supabase !== 'undefined') {
+        const { createClient } = supabase;
+        const dbClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        window.dbClient = dbClient;
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -17,6 +17,7 @@ import {
   Calculator,
   RefreshCw
 } from "lucide-react";
+import { NIGERIAN_SUPPLIERS } from "./mockDatabase";
 
 // Helper for Naira currency format
 const formatNaira = (value: number) => {
@@ -52,6 +53,9 @@ interface StructuredEstimate {
   finishesTotal: number;
   grandTotal: number;
   deliveryLogistics: number;
+  intent_type: "estimation_request" | "procurement_inquiry" | "general_question";
+  finish_tier: "Economy" | "Standard" | "Premium";
+  quickAnswer?: string;
 }
 
 export default function App() {
@@ -106,9 +110,61 @@ export default function App() {
     // 2. Parse Swampy Soil conditions (Lekki, Victoria Island, etc. require severe foundation surcharges)
     const isSwampy = qLower.includes("lekki") || qLower.includes("swamp") || qLower.includes("marsh") || qLower.includes("water") || qLower.includes("island") || qLower.includes("flooded") || qLower.includes("badagry");
 
-    // 3. Parse Finishing Quality Standards
-    const isPremium = qLower.includes("premium") || qLower.includes("luxury") || qLower.includes("high-end") || qLower.includes("first-class");
-    const isBasic = qLower.includes("basic") || qLower.includes("cheap") || qLower.includes("low-cost") || qLower.includes("budget");
+    // 3. Intent Classification Engine (Semantic Router)
+    let intent_type: "estimation_request" | "procurement_inquiry" | "general_question" = "estimation_request";
+    
+    const procurementKeywords = [
+      "buy", "get", "procure", "purchase", "where to buy", "where can i find", 
+      "where can i get", "supplier", "depot", "market", "merchant", "shop", 
+      "order", "today", "now", "distributor", "wholesaler", "dealer", "sourcing"
+    ];
+    
+    const generalQuestionKeywords = [
+      "how many", "how do i", "why do", "why does", "what is", "what are", "curing", 
+      "standard dimension", "thickness of", "ratio for", "regulatory", "explain", 
+      "guideline", "son standard", "coach of", "fence"
+    ];
+
+    if (procurementKeywords.some(kw => qLower.includes(kw))) {
+      intent_type = "procurement_inquiry";
+    } else if (generalQuestionKeywords.some(kw => qLower.includes(kw)) || qLower.startsWith("why") || qLower.startsWith("what") || qLower.startsWith("how")) {
+      intent_type = "general_question";
+    } else {
+      intent_type = "estimation_request";
+    }
+
+    // 4. Value-Based Finishing Mapping
+    let finish_tier: "Economy" | "Standard" | "Premium" = "Standard";
+    
+    const economyKeywords = ["cheap", "low budget", "manageable", "affordable", "basic", "low-cost", "budget"];
+    const premiumKeywords = ["luxury", "executive", "premium", "high-end", "best of the best", "first-class"];
+    
+    if (premiumKeywords.some(kw => qLower.includes(kw))) {
+      finish_tier = "Premium";
+    } else if (economyKeywords.some(kw => qLower.includes(kw))) {
+      finish_tier = "Economy";
+    } else {
+      finish_tier = "Standard";
+    }
+
+    const isPremium = finish_tier === "Premium";
+    const isBasic = finish_tier === "Economy";
+
+    // Generate quick answer snippet for general questions
+    let quickAnswer = "";
+    if (intent_type === "general_question") {
+      if (qLower.includes("block") || qLower.includes("fence") || qLower.includes("coach")) {
+        quickAnswer = "For a standard 100-foot run fence (9-inch blocks, 9 coaches high), you will need approximately 1,200 blocks. Each coach of a standard fence requires about 135 to 150 blocks depending on the gate pillar spacing. Ensure a 1:4 cement-to-sand mortar mix for optimal joint cohesion.";
+      } else if (qLower.includes("cement") || qLower.includes("concrete") || qLower.includes("mix")) {
+        quickAnswer = "A standard structural concrete mix (1:2:4 ratio) for slabs/decking achieves high compressive strength. This requires 1 bag of cement (50kg), 2 headpans/wheelbarrows of sharp sand, and 4 headpans of granite. Cure continuously with water for at least 14 to 21 days.";
+      } else if (qLower.includes("curing") || qLower.includes("dry") || qLower.includes("slab")) {
+        quickAnswer = "The Standard Organisation of Nigeria (SON) recommends a minimum curing duration of 7-14 days continuous wet blanket spraying or ponding. Slabs achieve 90% of their ultimate structural strength at 21 days and full design compression strength at 28 days.";
+      } else if (qLower.includes("collapse") || qLower.includes("crack")) {
+        quickAnswer = "Structural building collapses are primarily triggered by substandard reinforcement steel rebars, incorrect concrete batch ratios (diluted cement), lack of soil geotechnical assessment on swampy terrains, or unapproved additions of upper storeys without columns reinforcements.";
+      } else {
+        quickAnswer = "The Standard Organisation of Nigeria (SON) recommends local, climate-resilient building materials. Standard masonry uses Grade 32.5N cement, while suspended structures demand Grade 42.5R cement with high-yield TMT steel rebars.";
+      }
+    }
 
     // Base rates in Nigerian Naira (Sovereign Marketplace Index 2026)
     const cementRate = 7950; // Dangote 50kg
@@ -382,7 +438,10 @@ export default function App() {
       wallingRoofingTotal,
       finishesTotal,
       grandTotal,
-      deliveryLogistics
+      deliveryLogistics,
+      intent_type,
+      finish_tier,
+      quickAnswer
     };
   };
 
@@ -393,9 +452,10 @@ export default function App() {
     if (!activeQuery.trim()) return;
 
     setIsLoading(true);
+    setCurrentView("results");
     
-    // Simulate natural search latency (150ms - 400ms) for professional realism
-    const randomLatency = Math.floor(Math.random() * 250) + 150;
+    // Simulate natural search latency (1000ms - 1400ms) for professional realism and processing depth
+    const randomLatency = Math.floor(Math.random() * 400) + 1000;
     
     setTimeout(() => {
       const computed = calculateEstimate(activeQuery);
@@ -406,7 +466,6 @@ export default function App() {
         duration: randomLatency / 1000
       });
       setIsLoading(false);
-      setCurrentView("results");
     }, randomLatency);
   };
 
@@ -454,8 +513,6 @@ export default function App() {
           
           {/* Top Bar Navigation */}
           <header className="w-full max-w-7xl mx-auto px-6 flex justify-end items-center gap-4.5 select-none h-16">
-            <span className="text-[13px] font-medium text-neutral-700 hover:underline cursor-pointer">Sovereign Rates Index</span>
-            <span className="text-[13px] font-medium text-neutral-700 hover:underline cursor-pointer font-mono">v2.6 Live</span>
             
             {/* Google-like Apps Grid Icon */}
             <button className="p-2 hover:bg-neutral-100 rounded-full transition-colors text-neutral-600 shrink-0" title="Shurefire Services">
@@ -475,17 +532,17 @@ export default function App() {
             
             {/* Center Logo displays bold typography using '#ae2424' */}
             <div className="flex flex-col items-center cursor-default select-none animate-fade-in pb-2">
-              <span className="text-7xl sm:text-8xl md:text-[96px] font-black tracking-tighter text-[#ae2424] font-sans drop-shadow-3xs">
+              <span className="text-[52px] sm:text-8xl md:text-[96px] font-black tracking-tighter text-[#ae2424] font-sans drop-shadow-3xs">
                 Shurefire
               </span>
             </div>
 
             {/* The Pill Search Bar Assembly */}
-            <form onSubmit={handleSearch} className="w-full max-w-[584px] space-y-6">
+            <form onSubmit={handleSearch} className="w-full max-w-[584px] space-y-6 px-3 sm:px-0">
               
-              <div className="relative flex items-center bg-white border-2 border-neutral-300 hover:border-neutral-400/90 focus-within:border-[#ae2424] focus-within:ring-2 focus-within:ring-[#ae2424]/10 rounded-full hover:shadow-md focus-within:shadow-md transition-all duration-150 px-5 py-3.5 z-10">
+              <div className="relative flex items-center bg-white border-2 border-neutral-300 hover:border-neutral-400/90 focus-within:border-[#ae2424] focus-within:ring-2 focus-within:ring-[#ae2424]/10 rounded-full hover:shadow-md focus-within:shadow-md transition-all duration-150 px-3.5 sm:px-5 py-2.5 sm:py-3.5 z-10">
                 {/* Left: Custom Hard-hat icon colored in #ae2424 */}
-                <div className="flex items-center justify-center pl-1 pr-3.5 shrink-0">
+                <div className="flex items-center justify-center pl-0.5 pr-2 sm:pl-1 sm:pr-3.5 shrink-0">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-[21px] w-[21px] text-[#ae2424]">
                     <path d="M2 18h20" />
                     <path d="M12 3a9 9 0 0 1 9 9v5H3v-5a9 9 0 0 1 9-9z" fill="#ae2424" fillOpacity="0.12" />
@@ -499,14 +556,14 @@ export default function App() {
                 <input
                   type="text"
                   required
-                  placeholder="Estimate your project: E.g., '3-bedroom bungalow in Lekki, standard finishes'"
+                  placeholder="Estimate project (e.g. '3-bed bungalow in Lekki')"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  className="w-full bg-transparent text-neutral-900 font-sans text-base focus:outline-none placeholder:text-neutral-400 placeholder:font-light"
+                  className="w-full bg-transparent text-neutral-900 font-sans text-sm sm:text-base focus:outline-none placeholder:text-neutral-400 placeholder:font-light"
                 />
 
                 {/* Right Icons: Microphone and Camera Lens */}
-                <div className="flex items-center gap-3 pr-1 shrink-0 text-neutral-400 select-none">
+                <div className="flex items-center gap-2.5 sm:gap-3 pr-0.5 sm:pr-1 shrink-0 text-neutral-400 select-none">
                   <button type="button" className="hover:text-neutral-700 transition-colors" title="Voice Estimate (Powered by AI)">
                     <Mic className="h-[18px] w-[18px]" />
                   </button>
@@ -517,11 +574,11 @@ export default function App() {
               </div>
 
               {/* Action Buttons Centered Below Search Bar */}
-              <div className="flex items-center justify-center gap-3.5 pt-1.5 select-none">
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-1 select-none">
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="px-5 py-2.5 bg-neutral-50 hover:bg-neutral-100/90 hover:border-neutral-350 text-neutral-800 text-[14px] font-semibold rounded-lg border border-neutral-200/80 hover:border-neutral-300 transition-all cursor-pointer min-w-[135px] shadow-3xs"
+                  className="w-full sm:w-auto px-5 py-2.5 bg-neutral-50 hover:bg-neutral-100/90 hover:border-neutral-350 text-neutral-800 text-[14px] font-semibold rounded-lg border border-neutral-200/80 hover:border-neutral-300 transition-all cursor-pointer min-w-[135px] shadow-3xs"
                 >
                   {isLoading ? (
                     <span className="flex items-center justify-center gap-1.5">
@@ -536,7 +593,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => handleSuggestionClick("Dangote cement 50kg bag wholesale price Lagos")}
-                  className="px-5 py-2.5 bg-neutral-50 hover:bg-neutral-100/90 hover:border-neutral-350 text-neutral-800 text-[14px] font-semibold rounded-lg border border-neutral-200/80 hover:border-neutral-300 transition-all cursor-pointer min-w-[135px] shadow-3xs"
+                  className="w-full sm:w-auto px-5 py-2.5 bg-neutral-50 hover:bg-neutral-100/90 hover:border-neutral-350 text-neutral-800 text-[14px] font-semibold rounded-lg border border-neutral-200/80 hover:border-neutral-300 transition-all cursor-pointer min-w-[135px] shadow-3xs"
                 >
                   Procure with Shurefire
                 </button>
@@ -552,7 +609,7 @@ export default function App() {
             </div>
 
             {/* Suggested Shortcuts for Quick Inquiries */}
-            <div className="pt-4 flex flex-col items-center space-y-2 select-none">
+            <div className="pt-4 flex flex-col items-center space-y-2.5 select-none px-4 text-center">
               <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest font-mono">Suggested Audit Templates:</span>
               <div className="flex flex-wrap justify-center gap-2 max-w-xl">
                 <button 
@@ -604,24 +661,24 @@ export default function App() {
       )}
 
       {/* ----------------- VIEW 2: THE GOOGLE-STYLE RESULTS PAGE (OUTPUT SCREEN) ----------------- */}
-      {currentView === "results" && estimate && (
+      {currentView === "results" && (
         <div className="flex-1 flex flex-col bg-white">
           
           {/* Top Bar Navigation (Logo left, search input inline) */}
           <header className="sticky top-0 bg-white border-b border-neutral-200/80 z-20 select-none print:hidden">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               
-              <div className="flex flex-1 items-center gap-6">
+              <div className="flex flex-col sm:flex-row flex-1 sm:items-center gap-3 sm:gap-6 w-full">
                 {/* Logo top-left - clickable back to homepage */}
                 <div 
                   onClick={handleResetToHomepage}
-                  className="flex items-center gap-1.5 cursor-pointer text-2xl font-black tracking-tight text-[#ae2424] shrink-0"
+                  className="flex items-center gap-1.5 cursor-pointer text-2xl font-black tracking-tight text-[#ae2424] shrink-0 self-start sm:self-auto"
                 >
                   <span>Shurefire</span>
                 </div>
 
                 {/* Inline search bar (Vast negative space) */}
-                <form onSubmit={handleSearch} className="flex-1 max-w-[630px]">
+                <form onSubmit={handleSearch} className="flex-1 w-full max-w-full sm:max-w-[630px]">
                   <div className="relative flex items-center bg-white border border-neutral-200/90 rounded-full shadow-2xs hover:shadow-sm focus-within:shadow-sm transition-shadow px-3.5 py-2">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-4.5 w-4.5 text-[#ae2424] mr-2 shrink-0">
                       <path d="M2 18h20" />
@@ -631,7 +688,7 @@ export default function App() {
                       type="text"
                       value={query}
                       onChange={(e) => setQuery(e.target.value)}
-                      className="w-full bg-transparent text-neutral-800 font-sans text-xs focus:outline-none placeholder:text-neutral-400"
+                      className="w-full bg-transparent text-neutral-800 font-sans text-sm focus:outline-none placeholder:text-neutral-400"
                     />
                     <div className="flex items-center gap-2 text-neutral-400 pr-1 shrink-0">
                       <button type="submit" className="text-[#ae2424] hover:opacity-85 transition-opacity" title="Re-calculate Estimate">
@@ -646,7 +703,7 @@ export default function App() {
               </div>
 
               {/* Right Menu & Account profile */}
-              <div className="flex items-center gap-4 self-end md:self-auto">
+              <div className="flex items-center gap-4 self-end sm:self-auto shrink-0">
                 <button className="p-2 hover:bg-neutral-100 rounded-full text-neutral-600" title="Configuration Panel">
                   <Settings className="w-[18px] h-[18px]" />
                 </button>
@@ -663,8 +720,8 @@ export default function App() {
             </div>
 
             {/* Google Search Style Navigation Tabs (Under Bar) */}
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center border-t border-neutral-100/40 text-neutral-500 text-xs font-medium">
-              <div className="flex items-center gap-6 pt-2.5 pb-2">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center border-t border-neutral-100/40 text-neutral-500 text-xs font-medium overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              <div className="flex items-center gap-6 pt-2.5 pb-2 whitespace-nowrap">
                 <button 
                   onClick={() => setActiveTab("all")}
                   className={`pb-2.5 px-1 border-b-2 transition-all cursor-pointer ${
@@ -704,13 +761,286 @@ export default function App() {
           {/* Main Layout Grid - Split Columns */}
           <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-5.5 flex flex-col lg:flex-row gap-7 animate-fade-in print:py-0 print:gap-0">
             
-            {/* LEFT COLUMN: Organic Google Style results + Structured Tables (~65% width) */}
-            <section className="flex-1 lg:w-[65%] space-y-6">
+            {isLoading || !estimate ? (
+              <>
+                {/* LEFT COLUMN SKELETON */}
+                <div className="flex-1 lg:w-[65%] space-y-6 select-none animate-pulse">
+                  {/* Search Stats Skeleton */}
+                  <div className="h-4 bg-neutral-200 rounded w-1/3"></div>
+
+                  {/* Google Snippet Skeleton */}
+                  <div className="bg-white rounded-xl border border-neutral-100 p-4.5 space-y-3.5 shadow-3xs">
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 bg-neutral-200/80 rounded w-28"></div>
+                      <div className="h-3 bg-neutral-100 rounded w-16"></div>
+                    </div>
+                    <div className="h-5.5 bg-[#ae2424]/10 rounded w-2/3"></div>
+                    <div className="space-y-2 pt-1">
+                      <div className="h-3.5 bg-neutral-200/70 rounded w-full"></div>
+                      <div className="h-3.5 bg-neutral-200/70 rounded w-11/12"></div>
+                    </div>
+                  </div>
+
+                  {/* AI Evaluation Card Skeleton */}
+                  <div className="bg-neutral-50/70 border border-neutral-200/60 rounded-xl p-5 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3.5 h-3.5 bg-[#ae2424]/30 rounded-full animate-ping"></div>
+                      <div className="h-3.5 bg-neutral-300 rounded w-48"></div>
+                    </div>
+                    <div className="space-y-2.5">
+                      <div className="h-4 bg-neutral-200 rounded w-full"></div>
+                      <div className="h-4 bg-neutral-200 rounded w-5/6"></div>
+                      <div className="h-4 bg-neutral-200 rounded w-4/5"></div>
+                    </div>
+                  </div>
+
+                  {/* Sourcing Tables Skeletons */}
+                  {[1, 2, 3].map((idx) => (
+                    <div key={idx} className="bg-white rounded-2xl border border-neutral-200/80 shadow-3xs overflow-hidden">
+                      {/* Table header strip */}
+                      <div className="bg-neutral-50 px-5 py-4 border-b border-neutral-200 flex justify-between items-center">
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-5 w-5 bg-[#ae2424]/10 rounded"></div>
+                          <div className="h-4.5 bg-neutral-300 rounded w-44"></div>
+                        </div>
+                        <div className="h-4.5 bg-neutral-200/80 rounded w-24"></div>
+                      </div>
+
+                      {/* Table rows */}
+                      <div className="p-4 space-y-3.5">
+                        <div className="grid grid-cols-4 gap-4 border-b border-neutral-200/80 pb-2.5">
+                          <div className="h-3 bg-neutral-300 rounded w-3/4"></div>
+                          <div className="h-3 bg-neutral-200/80 rounded w-1/2"></div>
+                          <div className="h-3 bg-neutral-200/80 rounded w-1/2"></div>
+                          <div className="h-3 bg-neutral-300 rounded w-2/3"></div>
+                        </div>
+                        {[1, 2, 3].map((row) => (
+                          <div key={row} className="grid grid-cols-4 gap-4 py-1.5 border-b border-neutral-50 last:border-0">
+                            <div className="h-3.5 bg-neutral-200/70 rounded w-5/6"></div>
+                            <div className="h-3.5 bg-neutral-200/70 rounded w-1/3"></div>
+                            <div className="h-3.5 bg-neutral-200/70 rounded w-1/4"></div>
+                            <div className="h-3.5 bg-neutral-200/70 rounded w-1/2"></div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* RIGHT COLUMN SKELETON */}
+                <div className="w-full lg:w-[35%] space-y-5 select-none animate-pulse">
+                  {/* Guarantee Box Skeleton */}
+                  <div className="bg-white border-2 border-neutral-200 rounded-2xl p-5 shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 left-0 right-0 h-1.5 bg-[#ae2424]/40" />
+                    <div className="flex justify-between items-start pt-1.5 pb-4 border-b border-neutral-100">
+                      <div className="space-y-1.5">
+                        <div className="h-3 bg-neutral-200 rounded w-24"></div>
+                        <div className="h-5 bg-neutral-300 rounded w-44"></div>
+                      </div>
+                      <div className="h-5 bg-[#ae2424]/10 rounded-full w-20"></div>
+                    </div>
+                    <div className="py-4 space-y-2">
+                      <div className="h-3.5 bg-neutral-200/70 rounded w-full"></div>
+                      <div className="h-3.5 bg-neutral-200/70 rounded w-4/5"></div>
+                    </div>
+                    <div className="space-y-3 py-4 border-t border-neutral-100">
+                      {[1, 2, 3, 4].map((item) => (
+                        <div key={item} className="flex justify-between">
+                          <div className="h-3 bg-neutral-200/70 rounded w-1/3"></div>
+                          <div className="h-3 bg-neutral-200 rounded w-1/4"></div>
+                        </div>
+                      ))}
+                      <div className="pt-4 border-t border-neutral-200 space-y-2">
+                        <div className="h-3 bg-neutral-200/70 rounded w-24"></div>
+                        <div className="h-8 bg-neutral-300 rounded w-3/4"></div>
+                      </div>
+                    </div>
+                    <div className="space-y-2.5 pt-2">
+                      <div className="h-12 bg-neutral-300 rounded-xl w-full"></div>
+                      <div className="h-10 bg-neutral-100 border border-neutral-200 rounded-xl w-full"></div>
+                    </div>
+                  </div>
+
+                  {/* Metrics Box Skeleton */}
+                  <div className="bg-white border border-neutral-200 rounded-2xl p-5 shadow-sm space-y-4">
+                    <div className="border-b border-neutral-100 pb-3">
+                      <div className="h-4.5 bg-neutral-300 rounded w-1/2"></div>
+                    </div>
+                    <div className="space-y-2.5">
+                      <div className="h-3 bg-neutral-200/70 rounded w-1/3"></div>
+                      <div className="h-10 bg-neutral-100 rounded-lg w-full"></div>
+                    </div>
+                    <div className="space-y-2.5">
+                      <div className="h-3 bg-neutral-200/70 rounded w-1/3"></div>
+                      <div className="h-10 bg-neutral-100 rounded-lg w-full"></div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* LEFT COLUMN: Organic Google Style results + Structured Tables (~65% width) */}
+                <section className="flex-1 lg:w-[65%] space-y-6">
               
               {/* Search Stats (mimics Google) */}
-              <div className="text-[13px] text-neutral-500 font-sans select-none print:hidden">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-[13px] text-neutral-500 font-sans select-none print:hidden pb-1 border-b border-neutral-100">
                 <span>About {searchStats.resultsCount.toLocaleString()} sovereign indexes loaded in {searchStats.duration} seconds</span>
+                <span className="font-mono text-[10px] bg-neutral-100 px-2 py-0.5 rounded text-neutral-400">Database: Supabase Active</span>
               </div>
+
+              {/* INTENT CLASSIFICATION & DISSECTED PARAMETERS PILOTS */}
+              <div className="flex flex-wrap items-center gap-2 print:hidden select-none">
+                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border ${
+                  estimate.intent_type === "estimation_request" 
+                    ? "bg-[#ae2424]/5 text-[#ae2424] border-[#ae2424]/10"
+                    : estimate.intent_type === "procurement_inquiry"
+                    ? "bg-emerald-500/5 text-emerald-600 border-emerald-500/10"
+                    : "bg-blue-500/5 text-blue-600 border-blue-500/10"
+                }`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${
+                    estimate.intent_type === "estimation_request" 
+                      ? "bg-[#ae2424]"
+                      : estimate.intent_type === "procurement_inquiry"
+                      ? "bg-emerald-500"
+                      : "bg-blue-500"
+                  }`} />
+                  Intent: {
+                    estimate.intent_type === "estimation_request" 
+                      ? "Estimation Request" 
+                      : estimate.intent_type === "procurement_inquiry" 
+                      ? "Procurement Inquiry" 
+                      : "General Question"
+                  }
+                </span>
+
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-neutral-100 text-neutral-700 text-xs font-bold rounded-full border border-neutral-200">
+                  <span className="h-1.5 w-1.5 rounded-full bg-neutral-400" />
+                  Finish: {estimate.finish_tier}
+                </span>
+
+                {estimate.isSwampy && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/5 text-amber-600 text-xs font-bold rounded-full border border-amber-500/10">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    Soil: Swampy (Raft foundation surcharged)
+                  </span>
+                )}
+
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-neutral-100 text-neutral-700 text-xs font-bold rounded-full border border-neutral-200">
+                  <span className="h-1.5 w-1.5 rounded-full bg-neutral-400" />
+                  Query Target: {estimate.projectTitle}
+                </span>
+              </div>
+
+              {/* [GENERAL QUESTION VIEW: GOOGLE-STYLE ANSWER SNIPPET] */}
+              {estimate.intent_type === "general_question" && estimate.quickAnswer && (
+                <div className="bg-gradient-to-br from-neutral-50 to-white border border-neutral-200 rounded-2xl p-5.5 space-y-3.5 shadow-3xs relative overflow-hidden">
+                  <div className="absolute top-0 left-0 bottom-0 w-1 bg-[#ae2424]" />
+                  
+                  <div className="flex justify-between items-center select-none pl-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-[#ae2424]" />
+                      <span className="text-[10px] font-extrabold text-neutral-400 uppercase tracking-widest font-mono">
+                        Google-Style Featured Answer Snippet
+                      </span>
+                    </div>
+                    <span className="px-2.5 py-0.5 bg-neutral-100 border border-neutral-200 text-neutral-500 text-[9px] font-bold rounded-full font-mono uppercase">
+                      Verified Technical Answer
+                    </span>
+                  </div>
+
+                  <div className="space-y-2.5 pl-1.5">
+                    <p className="text-[15px] font-bold text-neutral-950 leading-relaxed font-sans">
+                      {estimate.quickAnswer}
+                    </p>
+                    <div className="text-xs text-neutral-500 leading-relaxed pt-1 flex flex-col sm:flex-row sm:items-center gap-2">
+                      <span className="font-semibold text-neutral-700">Standards Reference:</span>
+                      <span>Standard Organisation of Nigeria (SON) Civil Construction and Blockmaking Guidelines</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* [PROCUREMENT INQUIRY VIEW: DIRECT-TO-SITE MERCHANT DIRECTORY] */}
+              {estimate.intent_type === "procurement_inquiry" && (
+                <div className="bg-emerald-50/40 border-2 border-emerald-500/20 rounded-2xl p-5.5 space-y-4 shadow-3xs">
+                  <div className="flex justify-between items-center select-none">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-2.5 w-2.5 relative">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                      </span>
+                      <span className="text-xs font-black text-emerald-700 tracking-widest uppercase font-mono">
+                        Shurefire Direct Sourcing Directory Active
+                      </span>
+                    </div>
+                    <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-full font-mono uppercase">
+                      Marketplace Router
+                    </span>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <h3 className="text-lg font-black text-neutral-900">
+                      Verified Direct-to-Site Supplier Hubs & Wholesale Depots
+                    </h3>
+                    <p className="text-xs text-neutral-500 leading-relaxed">
+                      Avoid intermediate retail agents and commission markups. Choose a verified sovereign supplier from the Shurefire partner directory below to dispatch wholesale loads of Dangote Cement, BUA Cement, high-yield rebars, or aggregates directly to your site coordinates.
+                    </p>
+                  </div>
+
+                  {/* Direct Supplier Listing Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-2">
+                    {NIGERIAN_SUPPLIERS.filter(sup => {
+                      const q = query.toLowerCase();
+                      if (q.includes("lagos") || q.includes("lekki") || q.includes("ikeja") || q.includes("ajah") || q.includes("orile") || q.includes("alaba")) {
+                        return sup.state === "Lagos";
+                      } else if (q.includes("abuja") || q.includes("dei-dei") || q.includes("deidei") || q.includes("gwarinpa")) {
+                        return sup.state === "Abuja";
+                      } else if (q.includes("port harcourt") || q.includes("ph") || q.includes("diobu") || q.includes("mile")) {
+                        return sup.state === "Port Harcourt";
+                      } else if (q.includes("kano") || q.includes("sabon gari")) {
+                        return sup.state === "Kano";
+                      }
+                      return true; // default show all
+                    }).slice(0, 4).map((supplier) => (
+                      <div key={supplier.id} className="bg-white border border-neutral-200/90 hover:border-emerald-500/40 rounded-xl p-4 flex flex-col justify-between space-y-3 transition-colors shadow-3xs">
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-sm font-bold text-neutral-900">{supplier.name}</h4>
+                            {supplier.isVerified && (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded-full border border-emerald-100">
+                                <Check className="h-2.5 w-2.5 stroke-[3]" />
+                                Verified
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-neutral-500 font-medium flex items-center gap-1">
+                            📍 {supplier.marketName}, {supplier.city}
+                          </p>
+                          <div className="flex items-center gap-1.5 text-xs text-amber-500 font-semibold pt-0.5">
+                            <span>⭐ {supplier.rating} Rating</span>
+                            <span className="text-neutral-300">•</span>
+                            <span className="text-neutral-500 font-mono text-[10px] font-bold bg-neutral-100 px-1 py-0.5 rounded">
+                              Latency: {supplier.apiLatencyMs}ms
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-neutral-100 flex items-center justify-between gap-2">
+                          <span className="text-[10px] text-neutral-400 font-mono">ID: {supplier.id}</span>
+                          <a 
+                            href={`https://wa.me/2349023089987?text=Hello%20Shurefire,%20I%20want%20to%20place%20a%20direct%20wholesale%20order%20from%20${encodeURIComponent(supplier.name)}%20for%20cement%20or%20rebars`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer shadow-3xs"
+                          >
+                            <span>Dispatch via WhatsApp</span>
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* [SIMULATED ORGANIC GOOGLE SEARCH SNIPPET] */}
               <div className="bg-white rounded-xl border border-neutral-100 p-4.5 space-y-1.5 select-text shadow-3xs hover:border-neutral-200/80 transition-colors">
@@ -775,8 +1105,8 @@ export default function App() {
                     </span>
                   </div>
                   
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs border-collapse">
+                  <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                    <table className="w-full min-w-[620px] sm:min-w-full text-left text-xs border-collapse">
                       <thead>
                         <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-medium">
                           <th className="py-2.5 px-3">Structural Component</th>
@@ -816,8 +1146,8 @@ export default function App() {
                     </span>
                   </div>
                   
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs border-collapse">
+                  <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                    <table className="w-full min-w-[620px] sm:min-w-full text-left text-xs border-collapse">
                       <thead>
                         <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-medium">
                           <th className="py-2.5 px-3">Structural Component</th>
@@ -857,8 +1187,8 @@ export default function App() {
                     </span>
                   </div>
                   
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs border-collapse">
+                  <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+                    <table className="w-full min-w-[620px] sm:min-w-full text-left text-xs border-collapse">
                       <thead>
                         <tr className="bg-neutral-50 border-b border-neutral-200 text-neutral-500 font-medium">
                           <th className="py-2.5 px-3">Structural Component</th>
@@ -1020,8 +1350,10 @@ export default function App() {
               </div>
 
             </aside>
+          </>
+        )}
 
-          </main>
+      </main>
 
         </div>
       )}
@@ -1172,7 +1504,7 @@ export default function App() {
                   </span>
                 </div>
                 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {[
                     { value: "Length", label: "Length (12m)" },
                     { value: "KG", label: "Kilograms (KG)" },
@@ -1204,7 +1536,7 @@ export default function App() {
                   </span>
                 </div>
                 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {[
                     { value: "Tipper", label: "20-Ton Tipper" },
                     { value: "Tons", label: "Metric Tons" },

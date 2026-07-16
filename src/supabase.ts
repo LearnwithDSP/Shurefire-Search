@@ -1,0 +1,31 @@
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+
+let supabaseInstance: SupabaseClient | null = null;
+
+export function getSupabase(): SupabaseClient {
+  if (!supabaseInstance) {
+    // Check environment variables, support both standard Node environment and Vite import.meta.env as fallbacks
+    const url = 
+      (typeof process !== "undefined" && process.env?.SUPABASE_URL) || 
+      "https://your-supabase-project-id.supabase.co";
+      
+    const key = 
+      (typeof process !== "undefined" && process.env?.SUPABASE_ANON_KEY) || 
+      "YOUR_SUPABASE_ANON_KEY_HERE";
+
+    if (
+      !url || 
+      url.includes("YOUR_SUPABASE_URL_HERE") || 
+      url.includes("your-supabase-project-id") || 
+      !key || 
+      key.includes("YOUR_SUPABASE_ANON_KEY_HERE")
+    ) {
+      console.warn(
+        "[Shurefire Supabase Backend] Supabase credentials are not configured or are placeholder values. App is running with fallback mechanisms."
+      );
+    }
+    
+    supabaseInstance = createClient(url, key);
+  }
+  return supabaseInstance;
+}

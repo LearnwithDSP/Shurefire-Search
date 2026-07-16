@@ -7,6 +7,7 @@ import { queryLiveStockSuppliers, NIGERIAN_SUPPLIERS, INITIAL_MATERIALS } from "
 import { MaterialCategory, SupplyRegion, GroundingSource } from "./src/types.js";
 import { db } from "./src/firebase.js";
 import { doc, getDoc, setDoc } from "firebase/firestore";
+import { getSupabase } from "./src/supabase.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -171,13 +172,45 @@ async function startServer() {
             if (now - lastUpdatedTime < 2 * 60 * 60 * 1000) {
               cachedData = data;
               loadedFromCache = true;
-              console.log(`[Shorefire DB Cache] Cache HIT for search ID: ${cacheId}`);
+              console.log(`[Shorefire DB Cache] Cache HIT (Firestore) for search ID: ${cacheId}`);
             } else {
-              console.log(`[Shorefire DB Cache] Cache expired/stale for search ID: ${cacheId}`);
+              console.log(`[Shorefire DB Cache] Cache expired/stale in Firestore for search ID: ${cacheId}`);
             }
           }
         } catch (cacheErr) {
           console.error("[Shorefire DB Cache] Failed to read from firestore cache", cacheErr);
+        }
+
+        // Try Supabase if Firestore did not produce a fresh hit
+        if (!loadedFromCache) {
+          try {
+            const supabase = getSupabase();
+            const { data, error } = await supabase
+              .from("search_cache")
+              .select("*")
+              .eq("query_key", cacheId)
+              .maybeSingle();
+
+            if (data && !error) {
+              const lastUpdatedTime = new Date(data.last_updated || data.lastUpdated || data.created_at).getTime();
+              const now = Date.now();
+              if (now - lastUpdatedTime < 2 * 60 * 60 * 1000) {
+                cachedData = {
+                  answer: data.answer,
+                  featuredAnswer: data.featured_answer || data.featuredAnswer || data.answer,
+                  searchResults: typeof data.search_results === "string" ? JSON.parse(data.search_results) : (data.search_results || []),
+                  groundingSources: typeof data.grounding_sources === "string" ? JSON.parse(data.grounding_sources) : (data.grounding_sources || []),
+                  materials: typeof data.materials === "string" ? JSON.parse(data.materials) : (data.materials || []),
+                  apiLogs: typeof data.api_logs === "string" ? JSON.parse(data.api_logs) : (data.api_logs || []),
+                  lastUpdated: data.last_updated || data.lastUpdated || data.created_at
+                };
+                loadedFromCache = true;
+                console.log(`[Shorefire DB Cache] Cache HIT (Supabase) for search ID: ${cacheId}`);
+              }
+            }
+          } catch (supaErr) {
+            console.log("[Shorefire DB Cache] Supabase lookup skipped or table not created yet:", supaErr);
+          }
         }
       }
 
@@ -448,7 +481,7 @@ Generate the Featured Snippet answer and up to 10 distinct, highly informative s
         aiAnalysis = featuredAnswer;
       }
 
-      // Sync and Write-through Caching: Save search results and corresponding materials to Firestore
+      // Sync and Write-through Caching: Save search results and corresponding materials to Firestore & Supabase
       try {
         const payloadToCache = {
           queryKey: cacheId,
@@ -462,10 +495,44 @@ Generate the Featured Snippet answer and up to 10 distinct, highly informative s
           materials: (dbResult.materials || []).slice(0, 100),
           apiLogs: (dbResult.apiLogs || []).slice(0, 50)
         };
-        await setDoc(doc(db, "search_cache", cacheId), payloadToCache);
-        console.log(`[Shorefire DB Cache] Successfully cached result in search_cache for: ${cacheId}`);
-      } catch (saveErr) {
-        console.error("[Shorefire DB Cache] Failed to write cache document into firestore:", saveErr);
+        
+        // Write to Firestore
+        try {
+          await setDoc(doc(db, "search_cache", cacheId), payloadToCache);
+          console.log(`[Shorefire DB Cache] Successfully cached result in search_cache Firestore for: ${cacheId}`);
+        } catch (saveErr) {
+          console.error("[Shorefire DB Cache] Failed to write cache document into firestore:", saveErr);
+        }
+
+        // Write to Supabase
+        try {
+          const supabase = getSupabase();
+          const { error } = await supabase
+            .from("search_cache")
+            .upsert({
+              query_key: cacheId,
+              query: payloadToCache.query,
+              region: payloadToCache.region,
+              category: payloadToCache.category,
+              answer: payloadToCache.answer,
+              featured_answer: payloadToCache.featuredAnswer,
+              search_results: JSON.stringify(payloadToCache.searchResults),
+              grounding_sources: JSON.stringify(groundingSources),
+              materials: JSON.stringify(payloadToCache.materials),
+              api_logs: JSON.stringify(payloadToCache.apiLogs),
+              last_updated: payloadToCache.lastUpdated
+            }, { onConflict: "query_key" });
+          
+          if (error) {
+            console.log("[Shorefire DB Cache] Supabase write notice (table may need creation or keys are placeholders):", error.message);
+          } else {
+            console.log(`[Shorefire DB Cache] Successfully cached result in search_cache Supabase for: ${cacheId}`);
+          }
+        } catch (supaSaveErr) {
+          console.log("[Shorefire DB Cache] Supabase write skipped or failed (keys are placeholders or table doesn't exist yet).");
+        }
+      } catch (cacheWrapperErr) {
+        console.error("[Shorefire DB Cache] Unexpected cache write wrapper error:", cacheWrapperErr);
       }
 
       res.json({
