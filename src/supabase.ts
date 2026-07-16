@@ -2,7 +2,12 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 let supabaseInstance: SupabaseClient | null = null;
 
-export function getSupabase(): SupabaseClient {
+export function getSupabase(customUrl?: string, customKey?: string): SupabaseClient {
+  if (customUrl && customKey) {
+    supabaseInstance = createClient(customUrl, customKey);
+    return supabaseInstance;
+  }
+
   if (!supabaseInstance) {
     // Check environment variables, support both standard Node environment and Vite import.meta.env as fallbacks
     const url = 

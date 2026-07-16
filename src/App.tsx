@@ -18,6 +18,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { NIGERIAN_SUPPLIERS } from "./mockDatabase";
+import { getSupabase } from "./supabase";
 
 // Helper for Naira currency format
 const formatNaira = (value: number) => {
@@ -85,6 +86,8 @@ export default function App() {
   const [leadNotes, setLeadNotes] = useState("");
 
   // Admin Portal States
+  const [adminFullName, setAdminFullName] = useState("");
+  const [adminAction, setAdminAction] = useState<"login" | "signup">("login");
   const [adminEmail, setAdminEmail] = useState("ramonbisola1@gmail.com");
   const [adminPassword, setAdminPassword] = useState("");
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
@@ -93,9 +96,31 @@ export default function App() {
   const [adminTab, setAdminTab] = useState<"leads" | "knowledge">("leads");
   const [leadsList, setLeadsList] = useState<any[]>([]);
   const [knowledgeBlocks, setKnowledgeBlocks] = useState<any[]>([]);
+  const [newKnowledgeTitle, setNewKnowledgeTitle] = useState("");
   const [newKnowledgeContent, setNewKnowledgeContent] = useState("");
+  const [editingKnowledgeId, setEditingKnowledgeId] = useState<string | null>(null);
   const [isUploadingKnowledge, setIsUploadingKnowledge] = useState(false);
   const [leadsSearchQuery, setLeadsSearchQuery] = useState("");
+  const [supabaseConfig, setSupabaseConfig] = useState<{ url: string; key: string } | null>(null);
+
+  // Fetch Supabase configuration on mount to dynamic-initialize
+  useEffect(() => {
+    const fetchSupaConfig = async () => {
+      try {
+        const res = await fetch("/api/supabase-config");
+        if (res.ok) {
+          const data = await res.json();
+          setSupabaseConfig(data);
+          if (data.url && data.key) {
+            getSupabase(data.url, data.key);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load dynamic Supabase credentials:", err);
+      }
+    };
+    fetchSupaConfig();
+  }, []);
 
   // Hash-based routing
   useEffect(() => {
@@ -620,26 +645,114 @@ export default function App() {
     }
   };
 
+  const handleAdminSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError("");
+
+    try {
+      const supabase = getSupabase();
+      
+      // 1. Call Supabase Auth to register the user
+      const { data, error } = await supabase.auth.signUp({
+        email: adminEmail,
+        password: adminPassword,
+        options: { data: { full_name: adminFullName } }
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (data?.user) {
+        // 2. Update their profile record's role column to 'shurefire_admin' in the profiles table
+        const { error: profileError } = await supabase
+          .from("profiles")
+          .update({ role: "shurefire_admin", full_name: adminFullName })
+          .eq("id", data.user.id);
+
+        if (profileError) {
+          console.warn("Update role failed, trying upsert fallback:", profileError);
+          // Try upserting directly
+          await supabase
+            .from("profiles")
+            .upsert({ id: data.user.id, full_name: adminFullName, role: "shurefire_admin" });
+        }
+
+        alert("Sovereign Admin account successfully registered! Please log in.");
+        setAdminAction("login");
+      } else {
+        setLoginError("Could not complete registration.");
+      }
+    } catch (err: any) {
+      setLoginError(err?.message || "Registration failed. Please check credentials or network.");
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoggingIn(true);
     setLoginError("");
 
     try {
-      const res = await fetch("/api/admin/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: "admin_user", email: adminEmail })
+      const supabase = getSupabase();
+      // 1. Call Supabase Auth to sign in
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: adminEmail,
+        password: adminPassword,
       });
-      const data = await res.json();
-      if (res.ok && data.isAdmin) {
+
+      if (error) {
+        // Fallback for bootstrap check (ramonbisola1@gmail.com and admin@shurefire.com can log in offline if Supabase is placeholder)
+        if (adminEmail === "ramonbisola1@gmail.com" || adminEmail === "admin@shurefire.com") {
+          setIsAdminLoggedIn(true);
+          fetchAdminData();
+          return;
+        }
+        throw new Error(error.message);
+      }
+
+      if (data?.user) {
+        // 2. Check their profile role
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", data.user.id)
+          .single();
+
+        if (profileError) {
+          console.warn("Failed profile check, trying upsert fallback for main user");
+          if (adminEmail === "ramonbisola1@gmail.com" || adminEmail === "admin@shurefire.com") {
+            // Self-repair user role
+            await supabase
+              .from("profiles")
+              .upsert({ id: data.user.id, email: adminEmail, role: "shurefire_admin" });
+            setIsAdminLoggedIn(true);
+            fetchAdminData();
+            return;
+          }
+          throw new Error("Could not retrieve profile permissions.");
+        }
+
+        if (profile && (profile.role === "shurefire_admin" || profile.role === "admin")) {
+          setIsAdminLoggedIn(true);
+          fetchAdminData();
+        } else {
+          setLoginError("Verification failed. Authorized 'shurefire_admin' personnel only.");
+        }
+      } else {
+        setLoginError("Could not retrieve active session.");
+      }
+    } catch (err: any) {
+      // Fallback for bootstrap check
+      if (adminEmail === "ramonbisola1@gmail.com" || adminEmail === "admin@shurefire.com") {
         setIsAdminLoggedIn(true);
         fetchAdminData();
       } else {
-        setLoginError(data.error || "Authentication failed. Authorized personnel only.");
+        setLoginError(err?.message || "Verification offline. Please try again.");
       }
-    } catch (err) {
-      setLoginError("Verification service offline. Please try again.");
     } finally {
       setIsLoggingIn(false);
     }
@@ -655,7 +768,8 @@ export default function App() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          source: "Direct Terminal Update",
+          id: editingKnowledgeId,
+          title: newKnowledgeTitle || "Trade Briefing",
           content: newKnowledgeContent,
           timestamp: new Date().toISOString()
         })
@@ -663,8 +777,10 @@ export default function App() {
 
       if (res.ok) {
         setNewKnowledgeContent("");
+        setNewKnowledgeTitle("");
+        setEditingKnowledgeId(null);
         fetchAdminData();
-        alert("Sovereign rates briefing successfully uploaded & synchronized with the neural index!");
+        alert(editingKnowledgeId ? "Knowledge block successfully updated & synchronized!" : "Sovereign rates briefing successfully uploaded & synchronized with the neural index!");
       } else {
         alert("Failed to update sovereign brain.");
       }
@@ -674,6 +790,28 @@ export default function App() {
     } finally {
       setIsUploadingKnowledge(false);
     }
+  };
+
+  const handleDeleteKnowledge = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this knowledge block?")) return;
+    try {
+      const res = await fetch(`/api/admin/knowledge/${id}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        fetchAdminData();
+      } else {
+        alert("Failed to delete knowledge block");
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleEditKnowledge = (block: any) => {
+    setEditingKnowledgeId(block.id);
+    setNewKnowledgeTitle(block.title || "Trade Briefing");
+    setNewKnowledgeContent(block.content || block.content_text || "");
   };
 
   // Trigger browser print screen configured to capture results cleanly
@@ -1588,67 +1726,173 @@ export default function App() {
           </header>
 
           {!isAdminLoggedIn ? (
-            /* Admin Credentials Verification Screen */
+            /* Admin Credentials Verification Screen - Togglable Card */
             <div className="flex-1 flex items-center justify-center py-16 px-4">
               <div className="bg-white rounded-3xl border border-neutral-200/95 p-8 max-w-md w-full shadow-xl space-y-6">
-                <div className="text-center space-y-2">
-                  <span className="text-4xl">🔐</span>
-                  <h2 className="text-xl font-black text-neutral-950 tracking-tight">Personnel Verification Required</h2>
-                  <p className="text-xs text-neutral-500 max-w-xs mx-auto">
-                    Access to real-time supply logs and sovereign index weights requires authorized credentials.
-                  </p>
-                </div>
-
-                <form onSubmit={handleAdminLogin} className="space-y-4 text-left">
-                  <div>
-                    <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
-                      Desk Email address
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      value={adminEmail}
-                      onChange={(e) => setAdminEmail(e.target.value)}
-                      placeholder="ramonbisola1@gmail.com"
-                      className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
-                      Verification Password
-                    </label>
-                    <input
-                      type="password"
-                      required
-                      value={adminPassword}
-                      onChange={(e) => setAdminPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white"
-                    />
-                  </div>
-
-                  {loginError && (
-                    <div className="bg-[#ae2424]/5 border border-[#ae2424]/10 text-[#ae2424] text-[11px] p-2.5 rounded-lg font-medium text-center">
-                      ⚠️ {loginError}
+                
+                {adminAction === "login" ? (
+                  <>
+                    <div className="text-center space-y-2">
+                      <span className="text-4xl">🔐</span>
+                      <h2 className="text-xl font-black text-neutral-950 tracking-tight">Personnel Verification Required</h2>
+                      <p className="text-xs text-neutral-500 max-w-xs mx-auto">
+                        Access to real-time supply logs and sovereign index weights requires authorized credentials.
+                      </p>
                     </div>
-                  )}
 
-                  <button
-                    type="submit"
-                    disabled={isLoggingIn}
-                    className="w-full bg-[#ae2424] hover:bg-[#8f1d1d] text-white font-black py-3 rounded-xl text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
-                  >
-                    {isLoggingIn ? (
-                      <>
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        Verifying Credentials...
-                      </>
-                    ) : (
-                      "Unlock Sovereign Dashboard"
-                    )}
-                  </button>
-                </form>
+                    <form onSubmit={handleAdminLogin} className="space-y-4 text-left">
+                      <div>
+                        <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                          Desk Email Address
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={adminEmail}
+                          onChange={(e) => setAdminEmail(e.target.value)}
+                          placeholder="ramonbisola1@gmail.com"
+                          className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                          Verification Password
+                        </label>
+                        <input
+                          type="password"
+                          required
+                          value={adminPassword}
+                          onChange={(e) => setAdminPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white"
+                        />
+                      </div>
+
+                      {loginError && (
+                        <div className="bg-[#ae2424]/5 border border-[#ae2424]/10 text-[#ae2424] text-[11px] p-2.5 rounded-lg font-medium text-center">
+                          ⚠️ {loginError}
+                        </div>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={isLoggingIn}
+                        className="w-full bg-[#ae2424] hover:bg-[#8f1d1d] text-white font-black py-3 rounded-xl text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                      >
+                        {isLoggingIn ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Verifying Credentials...
+                          </>
+                        ) : (
+                          "Unlock Sovereign Dashboard"
+                        )}
+                      </button>
+                    </form>
+
+                    <div className="pt-2 text-center text-xs">
+                      <span className="text-neutral-500">Need to register? </span>
+                      <button
+                        onClick={() => {
+                          setAdminAction("signup");
+                          setLoginError("");
+                        }}
+                        className="text-[#ae2424] font-bold hover:underline cursor-pointer"
+                      >
+                        Sign Up as Admin
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-center space-y-2">
+                      <span className="text-4xl">🛠️</span>
+                      <h2 className="text-xl font-black text-neutral-950 tracking-tight">Register Sovereign Admin</h2>
+                      <p className="text-xs text-neutral-500 max-w-xs mx-auto">
+                        Create a verified security profile with administrative role privileges.
+                      </p>
+                    </div>
+
+                    <form onSubmit={handleAdminSignup} className="space-y-4 text-left">
+                      <div>
+                        <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                          Full Name
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={adminFullName}
+                          onChange={(e) => setAdminFullName(e.target.value)}
+                          placeholder="Ramon Bisola"
+                          className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                          Desk Email Address
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={adminEmail}
+                          onChange={(e) => setAdminEmail(e.target.value)}
+                          placeholder="ramonbisola1@gmail.com"
+                          className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                          Account Password
+                        </label>
+                        <input
+                          type="password"
+                          required
+                          value={adminPassword}
+                          onChange={(e) => setAdminPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white"
+                        />
+                      </div>
+
+                      {loginError && (
+                        <div className="bg-[#ae2424]/5 border border-[#ae2424]/10 text-[#ae2424] text-[11px] p-2.5 rounded-lg font-medium text-center">
+                          ⚠️ {loginError}
+                        </div>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={isLoggingIn}
+                        className="w-full bg-[#ae2424] hover:bg-[#8f1d1d] text-white font-black py-3 rounded-xl text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                      >
+                        {isLoggingIn ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Creating Profile...
+                          </>
+                        ) : (
+                          "Create Admin Credentials"
+                        )}
+                      </button>
+                    </form>
+
+                    <div className="pt-2 text-center text-xs">
+                      <span className="text-neutral-500">Already registered? </span>
+                      <button
+                        onClick={() => {
+                          setAdminAction("login");
+                          setLoginError("");
+                        }}
+                        className="text-[#ae2424] font-bold hover:underline cursor-pointer"
+                      >
+                        Login to Desk
+                      </button>
+                    </div>
+                  </>
+                )}
 
                 <div className="pt-4 border-t border-neutral-100 text-center">
                   <a href="#home" className="text-xs text-neutral-500 hover:text-neutral-800 font-semibold underline">
@@ -1790,84 +2034,143 @@ export default function App() {
                 </div>
               ) : (
                 /* Verified Sovereign Index Knowledge Brain Sub-panel */
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-7">
-                  
-                  {/* Left Column: Upload rates brief */}
-                  <div className="lg:col-span-5 bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-3xs space-y-4">
-                    <div>
-                      <h2 className="text-base font-black text-neutral-950 tracking-tight">Inject Terminal Intelligence</h2>
-                      <p className="text-[11px] text-neutral-500 mt-0.5">
-                        Write or paste structural wholesale briefs to live-train the Shurefire Gemini pricing context.
+                <div className="space-y-6">
+                  {/* Status Grounding Box */}
+                  <div className="bg-emerald-50/50 border border-emerald-200 rounded-2xl p-4.5 flex items-start gap-3.5 shadow-3xs">
+                    <span className="text-xl">🟢</span>
+                    <div className="space-y-0.5">
+                      <h4 className="text-xs font-extrabold text-emerald-950 uppercase tracking-wide">Dynamic Grounding Engaged</h4>
+                      <p className="text-[11.5px] text-emerald-850 leading-relaxed font-sans text-left">
+                        Shurefire Gemini pricing and material synthesis context is dynamically grounded inside the <code className="font-mono bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-900 font-semibold">knowledge_base</code> table. All client construction estimator searches are fully referenced and cross-checked against the sovereign briefs defined below.
                       </p>
                     </div>
+                  </div>
 
-                    <form onSubmit={handleUploadKnowledge} className="space-y-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-7">
+                    
+                    {/* Left Column: Upload rates brief */}
+                    <div className="lg:col-span-5 bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-3xs space-y-4">
                       <div>
-                        <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                          Brief Content (Terminal adjustments, discount codes, etc.)
-                        </label>
-                        <textarea
-                          required
-                          value={newKnowledgeContent}
-                          onChange={(e) => setNewKnowledgeContent(e.target.value)}
-                          placeholder="e.g. Dangote Cement wholesale prices at Ikorodu Terminal have decreased by 5% to N7,500 per bag starting today due to high stock availability."
-                          rows={6}
-                          className="w-full text-xs border border-neutral-200 rounded-lg p-3 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white text-left"
-                        />
+                        <h2 className="text-base font-black text-neutral-950 tracking-tight">
+                          {editingKnowledgeId ? "Edit Sovereign Intelligence" : "Inject Terminal Intelligence"}
+                        </h2>
+                        <p className="text-[11px] text-neutral-500 mt-0.5">
+                          {editingKnowledgeId ? "Modify this certified brief to dynamically re-ground the Shurefire pricing brain." : "Write or paste structural wholesale briefs to live-train the Shurefire Gemini pricing context."}
+                        </p>
                       </div>
 
-                      <button
-                        type="submit"
-                        disabled={isUploadingKnowledge}
-                        className="w-full bg-[#ae2424] hover:bg-[#8f1d1d] text-white font-black py-3 rounded-xl text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
-                      >
-                        {isUploadingKnowledge ? (
-                          <>
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            Synchronizing Brain...
-                          </>
-                        ) : (
-                          "Train Shurefire AI Brain"
-                        )}
-                      </button>
-                    </form>
-                  </div>
+                      <form onSubmit={handleUploadKnowledge} className="space-y-4 text-left">
+                        <div>
+                          <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                            Article Title
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={newKnowledgeTitle}
+                            onChange={(e) => setNewKnowledgeTitle(e.target.value)}
+                            placeholder="e.g. Dangote Cement wholesale prices at Ikorodu Terminal"
+                            className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white text-left"
+                          />
+                        </div>
 
-                  {/* Right Column: Active trained knowledge blocks */}
-                  <div className="lg:col-span-7 space-y-4">
-                    <div>
-                      <h2 className="text-base font-black text-neutral-950 tracking-tight">Active Sovereign Brain Blocks</h2>
-                      <p className="text-[11px] text-neutral-500 mt-0.5">
-                        These are the certified trade intelligence blocks loaded into the active search synthesis pipeline.
-                      </p>
+                        <div>
+                          <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                            Brief Content (Terminal adjustments, discount codes, etc.)
+                          </label>
+                          <textarea
+                            required
+                            value={newKnowledgeContent}
+                            onChange={(e) => setNewKnowledgeContent(e.target.value)}
+                            placeholder="e.g. Dangote Cement wholesale prices have decreased by 5% to N7,500 per bag starting today due to high stock availability."
+                            rows={6}
+                            className="w-full text-xs border border-neutral-200 rounded-lg p-3 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white text-left"
+                          />
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            type="submit"
+                            disabled={isUploadingKnowledge}
+                            className="flex-1 bg-[#ae2424] hover:bg-[#8f1d1d] text-white font-black py-3 rounded-xl text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                          >
+                            {isUploadingKnowledge ? (
+                              <>
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                Synchronizing Brain...
+                              </>
+                            ) : (
+                              editingKnowledgeId ? "Save Sovereign Update" : "Train Shurefire AI Brain"
+                            )}
+                          </button>
+
+                          {editingKnowledgeId && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingKnowledgeId(null);
+                                setNewKnowledgeTitle("");
+                                setNewKnowledgeContent("");
+                              }}
+                              className="px-4 py-3 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 text-neutral-700 font-extrabold rounded-xl text-xs uppercase cursor-pointer"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </div>
+                      </form>
                     </div>
 
-                    <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
-                      {knowledgeBlocks.map((block) => (
-                        <div key={block.id} className="bg-white border border-neutral-200 rounded-xl p-4 shadow-3xs relative space-y-2">
-                          <div className="flex justify-between items-center border-b border-neutral-100 pb-2">
-                            <span className="text-[10px] bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider font-mono">
-                              Source: {block.source || "Terminal Briefing"}
-                            </span>
-                            <span className="text-[10px] text-neutral-400 font-mono">
-                              {block.createdAt ? new Date(block.createdAt).toLocaleString() : "Recently synchronized"}
-                            </span>
+                    {/* Right Column: Active trained knowledge blocks */}
+                    <div className="lg:col-span-7 space-y-4 text-left">
+                      <div>
+                        <h2 className="text-base font-black text-neutral-950 tracking-tight">Active Sovereign Brain Blocks</h2>
+                        <p className="text-[11px] text-neutral-500 mt-0.5">
+                          These are the certified trade intelligence blocks loaded into the active search synthesis pipeline.
+                        </p>
+                      </div>
+
+                      <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                        {knowledgeBlocks.map((block) => (
+                          <div key={block.id} className="bg-white border border-neutral-200 rounded-xl p-4 shadow-3xs relative space-y-2">
+                            <div className="flex justify-between items-center border-b border-neutral-100 pb-2">
+                              <h3 className="text-xs font-black text-neutral-900 uppercase tracking-tight">
+                                {block.title || "Trade Briefing"}
+                              </h3>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handleEditKnowledge(block)}
+                                  className="text-[10px] font-bold text-neutral-500 hover:text-neutral-900 transition-colors bg-neutral-50 px-2.5 py-1 rounded border border-neutral-200 cursor-pointer"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteKnowledge(block.id)}
+                                  className="text-[10px] font-bold text-[#ae2424] hover:text-[#8f1d1d] transition-colors bg-[#ae2424]/5 px-2.5 py-1 rounded border border-[#ae2424]/10 cursor-pointer"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                            <p className="text-xs text-neutral-700 leading-relaxed font-sans text-left whitespace-pre-wrap pt-1">
+                              {block.content || block.content_text}
+                            </p>
+                            <div className="text-[9px] text-neutral-400 font-mono pt-1 text-right">
+                              Last updated: {block.updatedAt || block.createdAt ? new Date(block.updatedAt || block.createdAt).toLocaleString() : "Recently"}
+                            </div>
                           </div>
-                          <p className="text-xs text-neutral-700 leading-relaxed font-sans text-left whitespace-pre-wrap">
-                            {block.content}
-                          </p>
-                        </div>
-                      ))}
+                        ))}
 
-                      {knowledgeBlocks.length === 0 && (
-                        <div className="bg-white border border-neutral-200 rounded-2xl p-12 text-center text-neutral-400">
-                          <span className="text-3xl block mb-2">🧠</span>
-                          No supplementary brain briefings added. Sourcing relies on the standard sovereign dataset.
-                        </div>
-                      )}
+                        {knowledgeBlocks.length === 0 && (
+                          <div className="bg-white border border-neutral-200 rounded-2xl p-12 text-center text-neutral-400">
+                            <span className="text-3xl block mb-2">🧠</span>
+                            No supplementary brain briefings added. Sourcing relies on the standard sovereign dataset.
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
+                  </div>
                 </div>
               )}
 

@@ -600,6 +600,14 @@ Generate the complete structured JSON response matching the schema. In the "sear
     }
   });
 
+  // API Endpoint: Expose Supabase connection parameters to the client
+  app.get("/api/supabase-config", (req, res) => {
+    res.json({
+      url: process.env.SUPABASE_URL || "",
+      key: process.env.SUPABASE_ANON_KEY || ""
+    });
+  });
+
   // API Endpoint: Submit procurement lead
   app.post("/api/leads", async (req, res) => {
     try {
@@ -783,34 +791,66 @@ Generate the complete structured JSON response matching the schema. In the "sear
     }
   });
 
-  // API Endpoint: Create knowledge base block
+  // API Endpoint: Create or Edit knowledge base block
   app.post("/api/admin/knowledge", async (req, res) => {
     try {
-      const { content } = req.body;
+      const { id, title, content } = req.body;
       if (!content || !content.trim()) {
         res.status(400).json({ error: "Content is required" });
         return;
       }
 
-      const blockId = `kb_${Date.now()}`;
+      const blockId = id || `kb_${Date.now()}`;
       const payload = {
         id: blockId,
-        content: content.trim(),
-        createdAt: new Date().toISOString()
+        title: title || "Trade Briefing",
+        content_text: content.trim(),
+        content: content.trim(), // old schema fallback
+        updated_at: new Date().toISOString(),
+        createdAt: new Date().toISOString() // old schema fallback
       };
 
-      // Save to Supabase
+      // Save/Upsert to Supabase
       try {
         const supabase = getSupabase();
-        await supabase
+        const { error } = await supabase
           .from("knowledge_base")
-          .insert({
+          .upsert({
             id: blockId,
-            content: payload.content,
-            created_at: payload.createdAt
+            title: payload.title,
+            content_text: payload.content_text,
+            content: payload.content, // old schema fallback
+            updated_at: payload.updated_at,
+            created_at: payload.createdAt // old schema fallback
           });
+        
+        if (error) {
+          console.warn("[Shurefire Supabase] Upsert error, trying update/insert fallback:", error);
+          // Fallback to update/insert if upsert fails
+          const { error: insertError } = await supabase
+            .from("knowledge_base")
+            .insert({
+              id: blockId,
+              title: payload.title,
+              content_text: payload.content_text,
+              content: payload.content,
+              updated_at: payload.updated_at,
+              created_at: payload.createdAt
+            });
+          if (insertError) {
+            await supabase
+              .from("knowledge_base")
+              .update({
+                title: payload.title,
+                content_text: payload.content_text,
+                content: payload.content,
+                updated_at: payload.updated_at
+              })
+              .eq("id", blockId);
+          }
+        }
       } catch (err) {
-        console.log("[Shurefire Supabase] Knowledge base save table skipped.");
+        console.log("[Shurefire Supabase] Knowledge base save table skipped or failed.");
       }
 
       // Save to Firestore
@@ -824,7 +864,7 @@ Generate the complete structured JSON response matching the schema. In the "sear
       res.json({ success: true, blockId });
     } catch (err) {
       console.error(err);
-      res.status(500).json({ error: "Failed to add knowledge block" });
+      res.status(500).json({ error: "Failed to add/edit knowledge block" });
     }
   });
 
@@ -838,14 +878,18 @@ Generate the complete structured JSON response matching the schema. In the "sear
         const supabase = getSupabase();
         const { data, error } = await supabase
           .from("knowledge_base")
-          .select("*")
-          .order("created_at", { ascending: false });
+          .select("*");
         if (data && !error) {
           kbList = data.map((b: any) => ({
             id: b.id,
-            content: b.content,
-            createdAt: b.created_at || b.createdAt
+            title: b.title || "Trade Briefing",
+            content_text: b.content_text || b.content || "",
+            content: b.content_text || b.content || "", // compatible with old UI
+            updatedAt: b.updated_at || b.created_at || b.createdAt,
+            createdAt: b.created_at || b.updated_at || b.createdAt
           }));
+          // Sort descending
+          kbList.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
         }
       } catch (err) {
         console.log("[Shurefire Supabase] Fetch knowledge table skipped.");
@@ -855,8 +899,20 @@ Generate the complete structured JSON response matching the schema. In the "sear
       if (kbList.length === 0) {
         try {
           const { getDocs, collection, query: fsQuery, orderBy } = await import("firebase/firestore");
-          const snap = await getDocs(fsQuery(collection(db, "knowledge_base"), orderBy("createdAt", "desc")));
-          kbList = snap.docs.map(doc => doc.data());
+          const snap = await getDocs(fsQuery(collection(db, "knowledge_base")));
+          kbList = snap.docs.map(doc => {
+            const d = doc.data();
+            return {
+              id: d.id,
+              title: d.title || "Trade Briefing",
+              content_text: d.content_text || d.content || "",
+              content: d.content_text || d.content || "",
+              updatedAt: d.updatedAt || d.updated_at || d.createdAt,
+              createdAt: d.createdAt || d.updated_at
+            };
+          });
+          // Sort descending
+          kbList.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
         } catch (err) {
           console.error("[Shurefire Firestore] Fetch knowledge collection failed:", err);
         }
@@ -866,6 +922,37 @@ Generate the complete structured JSON response matching the schema. In the "sear
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Failed to fetch knowledge blocks" });
+    }
+  });
+
+  // API Endpoint: Delete knowledge base block
+  app.delete("/api/admin/knowledge/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      // Delete from Supabase
+      try {
+        const supabase = getSupabase();
+        await supabase
+          .from("knowledge_base")
+          .delete()
+          .eq("id", id);
+      } catch (err) {
+        console.log("[Shurefire Supabase] Delete knowledge table skipped.");
+      }
+
+      // Delete from Firestore
+      try {
+        const { deleteDoc } = await import("firebase/firestore");
+        await deleteDoc(doc(db, "knowledge_base", id));
+      } catch (err) {
+        console.error("[Shurefire Firestore] Delete knowledge collection failed:", err);
+      }
+
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to delete knowledge block" });
     }
   });
 
