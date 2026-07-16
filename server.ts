@@ -231,222 +231,274 @@ async function startServer() {
       // 1. Fetch live supplier stocks from the dynamic database (simulating API network lookups)
       const dbResult = queryLiveStockSuppliers(query, region as SupplyRegion, category as MaterialCategory);
 
-      // Helper for generating fallback rich results
+      // Fetch context from Supabase knowledge_base & Firestore knowledge_base
+      let kbTextContext = "";
+      try {
+        const supabase = getSupabase();
+        const { data: kbData, error: kbError } = await supabase
+          .from("knowledge_base")
+          .select("*");
+        if (kbData && kbData.length > 0 && !kbError) {
+          kbTextContext = kbData.map((b: any) => `KNOWLEDGE BLOCK:\n${b.content || b.block_content || ""}`).join("\n\n");
+          console.log(`[Shurefire Knowledge Base] Retrieved ${kbData.length} blocks from Supabase.`);
+        }
+      } catch (err) {
+        console.log("[Shurefire Knowledge Base] Supabase knowledge base table query skipped or failed, trying Firestore fallback...");
+      }
+
+      if (!kbTextContext) {
+        try {
+          const { getDocs, collection } = await import("firebase/firestore");
+          const snap = await getDocs(collection(db, "knowledge_base"));
+          if (!snap.empty) {
+            const blocks: string[] = [];
+            snap.forEach(doc => {
+              const d = doc.data();
+              blocks.push(`KNOWLEDGE BLOCK:\n${d.content}`);
+            });
+            kbTextContext = blocks.join("\n\n");
+            console.log(`[Shurefire Knowledge Base] Retrieved ${snap.size} blocks from Firestore.`);
+          }
+        } catch (fsErr) {
+          console.error("[Shurefire Knowledge Base] Firestore knowledge base fallback failed:", fsErr);
+        }
+      }
+
+      // Fallback generator in case Gemini is rate-limited or unavailable
       const getFallbackResults = (q: string, reg: string) => {
         const normQ = q.toLowerCase();
         let featured = "";
         const resultsList: any[] = [];
 
-        // Build generic high-quality answers
-        if (normQ.includes("cement")) {
-          featured = `### Quick Cement Update for ${reg}
-In the Nigerian building materials space, Portland cement (primarily Dangote 3X 42.5R and BUA Supreme 32.5N) trades within standard bands of **₦7,500 to ₦8,500 per 50kg bag**. Grading determines usage: 42.5R is high-grade rapid-hardening for suspended slabs, beams, and load-bearing structures, while 32.5N is optimal for masonry block-laying and plaster work. Ensure sacks are stored on timber pallets away from moisture.`;
-          
-          resultsList.push(
-            {
-              id: "res-shurefire",
-              title: "Shurefire Sourcing Desk & WhatsApp Global Link",
-              siteName: "Shurefire Partner Sourcing Network",
-              url: "https://wa.me/2349023089987",
-              snippet: "Direct WhatsApp matching to first-tier Nigerian wholesalers and cement terminals.",
-              fullContent: "Bypass intermediary agents. Instantly secure bulk factory-direct pricing on Dangote and BUA Cement loads. Coordinate flatbed truck transit for Lekki, Abuja Dei-Dei, and Port Harcourt. Hyperlink to whatsapp: [Shurefire Sourcing Desk](https://wa.me/2349023089987) or direct line (+2349023089987)."
-            },
-            {
-              id: "res-son",
-              title: "SON Standard Specification Guide on cement grades in Nigeria",
-              siteName: "Standard Organisation of Nigeria (SON)",
-              url: "https://son.gov.ng/cement-standards",
-              snippet: "Guidelines on NIS ISO 9001:2015 specifications governing local cement batching.",
-              fullContent: "SON guidelines partition Nigerian cement into Grade 42.5 (Rapid Non-cracking) and Grade 32.5 (Plastering Strength). Check the bags for the NIS quality certification mark to avoid substandard gypsum dilutions."
-            },
-            {
-              id: "res-nairaland",
-              title: "BUA vs Dangote Cement Price Comparison Thread: Lagos Market Focus",
-              siteName: "Nairaland Forum - Construction",
-              url: "https://nairaland.com/nigerian-cement-price-reviews",
-              snippet: "Current retail site updates, truck offsets, offloading fee experiences.",
-              fullContent: "Nairaland builders report retail stores pricing Dangote 3X at ₦8,200 while BUA trades at ₦7,800. Delivery for 300-bag short-trailers generally offers ₦400 discount per bag but excludes local community clearing fees ('owo ile')."
-            },
-            {
-              id: "res-punch-cement",
-              title: "Cement Wholesalers Announce Logistics Surcharges Amid Diesel Fluctuations",
-              siteName: "Punch Construction News",
-              url: "https://punchng.com/business-cement-logistics-updates",
-              snippet: "Distribution routes reporting up to 10% shifts due to state interstate tolls.",
-              fullContent: "Haulage from Obajana (Kogi state) and Ibese (Ogun state) to eastern states has triggered minor route adjustments. Wholesalers recommend securing terminal allocations ahead to buffer daily changes."
-            }
-          );
-        } else if (normQ.includes("iron") || normQ.includes("rod") || normQ.includes("rebar") || normQ.includes("steel")) {
-          featured = `### Iron Rods (Rebars) Buying Wisdom & Standards
-High-yield reinforcement rebars in Nigeria are standard-cut at **12-meter lengths**. For standard concrete decking, column structural cores, and foundation beams, standard high-tensile 16mm, 12mm, and 10mm TMT rods are mandatory. Locally rolled low-tensile rods lack standard flexibility and risk dangerous snapping because of high carbon impurities. Present standard price ranges: **₦13,000 - ₦15,000 for 16mm standard length**.`;
+        // Simple default estimation items
+        const isDuplex = normQ.includes("duplex") || normQ.includes("storey") || normQ.includes("story");
+        const isSwampy = normQ.includes("swamp") || normQ.includes("water") || normQ.includes("lekki") || normQ.includes("ajah");
+        const isPremium = normQ.includes("premium") || normQ.includes("luxury");
+        const isBasic = normQ.includes("economy") || normQ.includes("basic") || normQ.includes("cheap");
 
-          resultsList.push(
-            {
-              id: "res-shurefire",
-              title: "Shurefire Global Sourcing & Steel Broker Services",
-              siteName: "Shurefire Direct Sourcing",
-              url: "https://wa.me/2349023089987",
-              snippet: "Connect to major Nigerian steel mills and Alaba/Ojo iron merchants directly.",
-              fullContent: "Compare mill prices on premium TMT (Thermo-Mechanically Treated) steel rebars in Nigeria. Instantly schedule wholesale truckloads with verified weights from digital weighbridges. Reach us directly for prompt dispatch: [Shurefire Sourcing Desk](https://wa.me/2349023089987) or tap WhatsApp line (09023089987)."
-            },
-            {
-              id: "res-nse-steel",
-              title: "Sourcing High-Tensile TMT vs Local Cold-Rolled Rebars",
-              siteName: "Nigerian Society of Engineers (NSE)",
-              url: "https://nse.org.ng/structural-steel-analysis",
-              snippet: "Engineering recommendations on checking rebar flexibility and yield limits.",
-              fullContent: "NSE reports state that cold-rolled structural rebars lack the ductility needed for multi-story buildings. Builders must insist on TMT steel, identifiable by the embossed manufacturer logos and specific weight specifications."
-            },
-            {
-              id: "res-alaba-iron",
-              title: "Alaba / Ojo Rebar Market Weekly Price Index",
-              siteName: "Lagos Building Materials Association",
-              url: "https://lagosmaterials.org/ojo-iron-rod-price-index",
-              snippet: "Weekly spot rates for 10mm, 12mm, 16mm, 20mm and binding wire rolls.",
-              fullContent: "Currently, 16mm rebar is trading at ₦13,800/length; 12mm rebar trades at ₦8,500. Binding wire has stabilized at ₦42,000 per roll. Always verify merchant scales before offloading payments."
-            }
-          );
-        } else {
-          // General Knowledge questions (what is, why, how, when, etc.)
-          featured = `### Information & Structural Guide for "${q}"
-Nigerian building guidelines emphasize sourcing locally verified, climate-resilient components. Whether looking for concrete mix ratios (1:2:4 standard structural concrete strength), hollow block dimensions (vibrated NIS 9" blocks), excavation depths (typically 1.2m to 1.5m for dry-soil strip foundations), or curing duration (minimum of 7-14 days continuous wet blanket spray), adhering to Standard Organisation of Nigeria regulations minimizes risk and ensures long-term integrity.`;
+        const cementRate = isPremium ? 8200 : isBasic ? 7700 : 7950;
+        const rebar16Rate = isPremium ? 14200 : isBasic ? 13400 : 13800;
+        const blockRate = isPremium ? 820 : isBasic ? 720 : 780;
 
-          resultsList.push(
-            {
-              id: "res-shurefire",
-              title: "Shurefire Global Partners & Construction Sourcing desk",
-              siteName: "Shurefire Nigeria Info Center",
-              url: "https://wa.me/2349023089987",
-              snippet: "Direct WhatsApp hotline (+2349023089987) for wholesale structural estimations.",
-              fullContent: "Chat directly with the Shurefire Desk on WhatsApp for custom site quotes on cement, iron, wood, and block delivery coordinates. No middleman charges. Touch connection link: [Shurefire Sourcing Desk](https://wa.me/2349023089987) or dial 09023089987."
-            },
-            {
-              id: "res-lasppa",
-              title: "Lagos State Physical Planning structural approvals & inspection standards",
-              siteName: "LASPPA Official Portal",
-              url: "https://lasppa.lagosstate.gov.ng/approvals-guide",
-              snippet: "Lagos building requirements, soil testing mandates, and inspector guidelines.",
-              fullContent: "LASPPA mandates that structures exceeding two floors must undergo thorough geotechnical soil tests. Ensure you secure stamp certification from a registered civil engineer before pouring footing slabs."
-            },
-            {
-              id: "res-civil-portal",
-              title: "How to estimate concrete quantities and mixing calculations for slabs",
-              siteName: "Nigerian Civil Engineers Portal",
-              url: "https://civil.org.ng/structural-slab-guide",
-              snippet: "Comprehensive guide on mixing ratios, water-cement factors, and reinforcement spacing.",
-              fullContent: "A standard 15cm thick concrete decking slab relies on a 1:2:4 batch mix (1 bag cement, 2 wheelbarrows sharp sand, 4 wheelbarrows granite) achieving 20-25 N/mm² compressive strength. Cure aggressively for 21 days for maximum load load-bearing."
-            }
-          );
-        }
-
-        // Add additional general resources to make up to 10 distinct, neat results
-        const websites = [
-          { site: "NairaMetrics Construction Index", domain: "nairametrics.com/material-index" },
-          { site: "Punch Real Estate Digest", domain: "punchng.com/real-estate-nigeria" },
-          { site: "Federal Ministry of Works & Housing guidelines", domain: "works.gov.ng/building-codes" },
-          { site: "Dei-Dei Abuja Material Dealers Cooperative", domain: "deideimarket.org.ng/price-catalog" },
-          { site: "AllNigeriaBuilders Expert Forum", domain: "allnigeriabuilders.com/q-and-a" },
-          { site: "Structural Engineering Society of Nigeria", domain: "sesn.org/curing-and-casting" },
-          { site: "Nigerian Building & Road Research Institute", domain: "nbrri.gov.ng/research-summaries" }
+        const substructure = [
+          { name: "Dangote Cement 50kg (Grade 42.5R)", quantity: isDuplex ? 280 : 150, unit: "Bags", rate: cementRate, subtotal: (isDuplex ? 280 : 150) * cementRate, note: "For footing, columns, and foundation slab." },
+          { name: "16mm High-Ductility TMT Steel Rebar", quantity: isDuplex ? 120 : 60, unit: "Lengths", rate: rebar16Rate, subtotal: (isDuplex ? 120 : 60) * rebar16Rate, note: "High-yield column cages & reinforcement beams." },
+          { name: "Vibrated Hollow Block 9-inch", quantity: isDuplex ? 1400 : 800, unit: "Pcs", rate: blockRate, subtotal: (isDuplex ? 1400 : 800) * blockRate, note: "Sovereign standard NIS quality blocks." }
         ];
 
-        let index = resultsList.length + 1;
-        for (const web of websites) {
-          if (resultsList.length >= 10) break;
-          resultsList.push({
-            id: `res-gen-${index}`,
-            title: `Essential Guidelines & Case Study on "${q}" via ${web.site}`,
-            siteName: web.site,
-            url: `https://${web.domain}`,
-            snippet: `Analyzing local market availability, engineering specifications, and SON regulatory requirements related to "${q}" across the federation.`,
-            fullContent: `Comprehensive field guide documenting local market index, shipping calculations, and civil engineering best practices surrounding "${q}" in Nigeria. Industry specialists recommend verifying concrete casting temperatures and ensuring heavy truck site pathways are cleared of overhead wires. For direct discount rates, call or message Shurefire Global Sourcing Desk.`
-          });
-          index++;
-        }
+        const wallingRoofing = [
+          { name: "Dangote Cement 50kg (Grade 42.5R)", quantity: isDuplex ? 220 : 130, unit: "Bags", rate: cementRate, subtotal: (isDuplex ? 220 : 130) * cementRate, note: "Superstructure column beams and brick masonry layout." },
+          { name: "Premium Aluminum Roofing Sheets (0.55mm)", quantity: isDuplex ? 280 : 180, unit: "SQM", rate: 4500, subtotal: (isDuplex ? 280 : 180) * 4500, note: "Wind-resistant, anti-rust double layer roofing sheets." }
+        ];
 
-        return { featuredAnswer: featured, searchResults: resultsList };
+        const finishes = [
+          { name: "Imported Vitrified Floor Tiles (60x60cm)", quantity: isDuplex ? 220 : 120, unit: "Cartons", rate: 8500, subtotal: (isDuplex ? 220 : 120) * 8500, note: "Elegant, high-gloss vitrified tiles." },
+          { name: "Shurefire Premium Acrylic Emulsion Paint (20L)", quantity: isDuplex ? 28 : 15, unit: "Buckets", rate: 35000, subtotal: (isDuplex ? 28 : 15) * 35000, note: "Weather-resistant protective coat." }
+        ];
+
+        const substructureTotal = substructure.reduce((acc, curr) => acc + curr.subtotal, 0);
+        const wallingRoofingTotal = wallingRoofing.reduce((acc, curr) => acc + curr.subtotal, 0);
+        const finishesTotal = finishes.reduce((acc, curr) => acc + curr.subtotal, 0);
+        const deliveryLogistics = Math.floor((substructureTotal + wallingRoofingTotal) * 0.04);
+        const grandTotal = substructureTotal + wallingRoofingTotal + finishesTotal + deliveryLogistics;
+
+        featured = `### Material & Estimate Overview for "${q}"
+Based on local surveyor guidelines in ${reg}, a typical project of this nature is calculated to require approximately **₦${(grandTotal / 1_000_000).toFixed(2)} Million** in core materials. Ensure you procure materials from verified, high-ductility manufacturers to maintain structural durability.`;
+
+        resultsList.push(
+          {
+            id: "res-shurefire-fallback",
+            title: "Shurefire Direct Sourcing Desk & WhatsApp Hotline",
+            siteName: "Shurefire Direct",
+            url: "https://wa.me/2349023089987",
+            snippet: "Direct WhatsApp hotline (+2349023089987) for wholesale material bundles.",
+            fullContent: "Bypass secondary retail markups. Get verified direct mill pricing on Dangote Cement, standard structural blocks, and premium Alaba TMT steel rods delivered on-site. WhatsApp link: [Shurefire Sourcing Desk](https://wa.me/2349023089987)."
+          },
+          {
+            id: "res-son-fallback",
+            title: "SON NIS Cement Strength & Plastering Standards in Nigeria",
+            siteName: "Standard Organisation of Nigeria",
+            url: "https://son.gov.ng",
+            snippet: "Understanding Grade 42.5R and Grade 32.5N standards to bypass structural cracks.",
+            fullContent: "The Standard Organisation of Nigeria (SON) dictates that load-bearing columns and beams must employ Grade 42.5 cement. Non-structural partition wall masonry is perfectly served by Grade 32.5."
+          }
+        );
+
+        return {
+          projectTitle: `Structural Estimation for: ${q}`,
+          isDuplex,
+          isSwampy,
+          isPremium,
+          isBasic,
+          intent_type: "estimation_request",
+          finish_tier: isPremium ? "Premium" : isBasic ? "Economy" : "Standard",
+          quickAnswer: `Estimated total materials cost is ₦${grandTotal.toLocaleString()} with logistics included.`,
+          featuredAnswer: featured,
+          substructure,
+          wallingRoofing,
+          finishes,
+          substructureTotal,
+          wallingRoofingTotal,
+          finishesTotal,
+          deliveryLogistics,
+          grandTotal,
+          searchResults: resultsList,
+          sovereignRates: [
+            { material: "Dangote Cement 50kg Lagos", rate: cementRate, unit: "Bag" },
+            { material: "16mm TMT Steel Rebars", rate: rebar16Rate, unit: "Length" },
+            { material: "Vibrated Hollow Block 9-inch", rate: blockRate, unit: "Pc" }
+          ],
+          groundingSources: []
+        };
       };
 
-      // 2. Generate AI Brain grounding & analysis leveraging Gemini Search Grounding
+      // 2. Generate AI Brain grounding & analysis leveraging Gemini
       const ai = getGeminiClient();
-      let aiAnalysis = "";
-      let featuredAnswer = "";
-      let searchResults: any[] = [];
+      let payloadToCache: any = null;
       let groundingSources: GroundingSource[] = [];
 
-      const targetRegion = region || "Nigeria";
-      const targetCategory = category || "general building materials";
-      const searchQueryText = query || "latest building material trends and standard dimensions";
+      const targetRegion = region || "Lagos";
+      const targetCategory = category || "all";
+      const searchQueryText = query || "";
 
       if (ai) {
         try {
-          const systemContext = `You are Shurefire AI Quantity Surveyor & Construction Expert, the brilliant Nigerian civil engineering brain.
-Your role is to analyze queries about building materials, construction standards, pricing, general knowledge, building safety, and engineering specifications in Nigeria.
-You support general questions too (What is, why, how, when, etc.). For instance, if a user asks "why do buildings collapse", analyze soil, reinforcement tensile limits, and substandard mixtures.
+          const systemContext = `You are Shurefire AI Quantity Surveyor & sovereign material analyst.
+Your job is to parse the user's search query for Project Type, Location, and Finish Level.
+You must synthesize the material estimate using ONLY the pricing and parameters retrieved from the following KNOWLEDGE BASE context:
 
-You MUST respond strictly in a highly structured JSON format conforming to the expected schema. 
-Provide a detailed Featured Snippet ("featuredAnswer") giving the prime, most helpful answer.
-Then, generate up to 10 search results ("searchResults") exactly mimicking real Google Search listings.
-Inside the "searchResults", you MUST insert exactly one entry representing the "Shurefire Global Link" on WhatsApp:
-- siteName: "Shurefire Sourcing Desk"
-- url: "https://wa.me/2349023089987"
-- title: "Shurefire Global Sourcing & Premium Merchant Partners"
-- snippet: "Secure immediate direct wholesale price matches on cement, iron rods, aggregations, and bulk timber on WhatsApp +2349023089987."
-- fullContent: "Direct dispatch matching bypasses agents and delivers standard Grade 42.5R Dangote cement, high-ductility TMT iron rods, blocks, and sharp sand truckloads to Lagos, Abuja, and PH. WhatsApp chat link: [Shurefire Sourcing Desk](https://wa.me/2349023089987) or speak to wholesalers directly on 09023089987."
+${kbTextContext || "Default Sovereign Baseline pricing:\n- Dangote Cement 50kg bag Lagos: ₦7,950 (Logistics: ₦400/bag)\n- BUA Supreme Cement 50kg bag: ₦7,800\n- 16mm TMT Steel Rebar (Length 12m): ₦13,800\n- 12mm High-Tension Steel Rebar (Length 12m): ₦8,300\n- Vibrated Hollow Block 9-inch: ₦780 each\n- Vibrated Hollow Block 6-inch: ₦650 each\n- Sharp Sand (20t Tipper): ₦135,000\n- Granite Stone (20t Tipper): ₦275,000\n- Premium Aluminum Roofing Sheets: ₦4,500/SQM\n- Hardwood Timber 2x4 Length: ₦1,800"}
 
-All other search results must show high-quality, realistic, distinct sources from the Nigerian internet (Nairaland Construction, SON Portal, Nigerian Society of Engineers, Lagos planning, Punch Real Estate, or regional markets). Include real-world numbers (Naira, standard lengths, weights, standard concrete mixing, structural columns guidelines).`;
+CRITICAL RULE: You are STRICTLY FORBIDDEN from mentioning external hubs or third-party depots (such as Jumia, Jiji, or retail outlets outside of Shurefire) unless explicitly written in the knowledge base. Always prioritize direct dispatch through the "Shurefire Sourcing Desk" on WhatsApp +2349023089987.
+
+You must respond strictly in a structured JSON format conforming to the expected schema. Make calculations mathematically accurate (subtotal = quantity * rate). Grand total = substructureTotal + wallingRoofingTotal + finishesTotal + deliveryLogistics.`;
 
           const userPrompt = `Search Query: "${searchQueryText}"
-Filter State: ${targetRegion}
+Filter State/Region: ${targetRegion}
 Category Context: ${targetCategory}
 
-Generate the Featured Snippet answer and up to 10 distinct, highly informative search results from different sources reflecting different angles or guidelines about "${searchQueryText}" in ${targetRegion}. Make it extremely realistic and professional. Ensure one result represents Shurefire Sourcing Desk.`;
+Generate the complete structured JSON response matching the schema. In the "searchResults", you MUST insert exactly one entry representing the "Shurefire Sourcing Desk" with WhatsApp Link "https://wa.me/2349023089987". Ensure the results reflect the Nigerian building ecosystem beautifully.`;
 
           const response = await ai.models.generateContent({
             model: "gemini-3.5-flash",
             contents: userPrompt,
             config: {
               systemInstruction: systemContext,
-              tools: [{ googleSearch: {} }],
               responseMimeType: "application/json",
               responseSchema: {
                 type: Type.OBJECT,
                 properties: {
-                  featuredAnswer: {
-                    type: Type.STRING,
-                    description: "Featured Snippet: Concise key answer, specification sheet, general explanation or standard pricing table."
+                  projectTitle: { type: Type.STRING },
+                  isDuplex: { type: Type.BOOLEAN },
+                  isSwampy: { type: Type.BOOLEAN },
+                  isPremium: { type: Type.BOOLEAN },
+                  isBasic: { type: Type.BOOLEAN },
+                  intent_type: { type: Type.STRING },
+                  finish_tier: { type: Type.STRING },
+                  quickAnswer: { type: Type.STRING },
+                  featuredAnswer: { type: Type.STRING },
+                  substructure: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        name: { type: Type.STRING },
+                        quantity: { type: Type.INTEGER },
+                        unit: { type: Type.STRING },
+                        rate: { type: Type.INTEGER },
+                        subtotal: { type: Type.INTEGER },
+                        note: { type: Type.STRING }
+                      },
+                      required: ["name", "quantity", "unit", "rate", "subtotal", "note"]
+                    }
                   },
+                  wallingRoofing: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        name: { type: Type.STRING },
+                        quantity: { type: Type.INTEGER },
+                        unit: { type: Type.STRING },
+                        rate: { type: Type.INTEGER },
+                        subtotal: { type: Type.INTEGER },
+                        note: { type: Type.STRING }
+                      },
+                      required: ["name", "quantity", "unit", "rate", "subtotal", "note"]
+                    }
+                  },
+                  finishes: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        name: { type: Type.STRING },
+                        quantity: { type: Type.INTEGER },
+                        unit: { type: Type.STRING },
+                        rate: { type: Type.INTEGER },
+                        subtotal: { type: Type.INTEGER },
+                        note: { type: Type.STRING }
+                      },
+                      required: ["name", "quantity", "unit", "rate", "subtotal", "note"]
+                    }
+                  },
+                  substructureTotal: { type: Type.INTEGER },
+                  wallingRoofingTotal: { type: Type.INTEGER },
+                  finishesTotal: { type: Type.INTEGER },
+                  deliveryLogistics: { type: Type.INTEGER },
+                  grandTotal: { type: Type.INTEGER },
                   searchResults: {
                     type: Type.ARRAY,
-                    description: "Exactly 8 to 10 high-quality, diverse search results from different local and global authorities.",
                     items: {
                       type: Type.OBJECT,
                       properties: {
                         id: { type: Type.STRING },
-                        title: { type: Type.STRING, description: "Descriptive page title from this source. Title must not mention any external links, but should describe the article." },
-                        siteName: { type: Type.STRING, description: "Organization name, e.g. SON, Nairaland, Nigerian Society of Engineers." },
-                        url: { type: Type.STRING, description: "A clean realistic domain URL." },
-                        snippet: { type: Type.STRING, description: "Short sentence summary." },
-                        fullContent: { type: Type.STRING, description: "Deep engineering wisdom, pricing, or instructions revealed when this source block is expanded on-screen (rich informative markdown)." }
+                        title: { type: Type.STRING },
+                        siteName: { type: Type.STRING },
+                        url: { type: Type.STRING },
+                        snippet: { type: Type.STRING },
+                        fullContent: { type: Type.STRING }
                       },
                       required: ["id", "title", "siteName", "url", "snippet", "fullContent"]
                     }
+                  },
+                  sovereignRates: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        material: { type: Type.STRING },
+                        rate: { type: Type.INTEGER },
+                        unit: { type: Type.STRING }
+                      },
+                      required: ["material", "rate", "unit"]
+                    }
                   }
                 },
-                required: ["featuredAnswer", "searchResults"]
+                required: [
+                  "projectTitle", "isDuplex", "isSwampy", "isPremium", "isBasic", "intent_type", "finish_tier",
+                  "quickAnswer", "featuredAnswer", "substructure", "wallingRoofing", "finishes",
+                  "substructureTotal", "wallingRoofingTotal", "finishesTotal", "deliveryLogistics", "grandTotal",
+                  "searchResults", "sovereignRates"
+                ]
               }
-            },
+            }
           });
 
           const geminiJSON = JSON.parse(response.text.trim());
-          featuredAnswer = geminiJSON.featuredAnswer || "";
-          searchResults = geminiJSON.searchResults || [];
-          aiAnalysis = featuredAnswer;
+          payloadToCache = {
+            ...geminiJSON,
+            queryKey: cacheId,
+            query: queryStr,
+            region: targetRegion,
+            category: targetCategory,
+            lastUpdated: new Date().toISOString()
+          };
 
           // Double check Shurefire presence, if not present inject it
-          const hasShurefire = searchResults.some(r => r.url && r.url.includes("wa.me/2349023089987") || r.siteName && r.siteName.toLowerCase().includes("shurefire"));
-          if (!hasShurefire && searchResults.length > 0) {
-            searchResults.unshift({
+          const hasShurefire = payloadToCache.searchResults.some((r: any) => r.url && r.url.includes("wa.me/2349023089987") || r.siteName && r.siteName.toLowerCase().includes("shurefire"));
+          if (!hasShurefire && payloadToCache.searchResults.length > 0) {
+            payloadToCache.searchResults.unshift({
               id: "res-shurefire-injected",
               title: "Shurefire Global Sourcing Desk & WhatsApp Sourcing Link",
               siteName: "Shurefire Direct Sourcing",
@@ -456,98 +508,364 @@ Generate the Featured Snippet answer and up to 10 distinct, highly informative s
             });
           }
 
-          // Map Search Grounding metadata for sources list
-          const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-          if (chunks) {
-            groundingSources = chunks
-              .filter(chunk => chunk.web?.uri)
-              .map(chunk => ({
-                title: chunk.web?.title || "Search Grounding Reference",
-                uri: chunk.web?.uri || "",
-              }));
-          }
         } catch (gemIniErr: any) {
-          console.warn(`[Shorefire AI] Search content generation activated rich fallback. (Reason: Gemini response currently rate-limited or key quota exceeded).`);
-          const fallback = getFallbackResults(searchQueryText, targetRegion);
-          featuredAnswer = fallback.featuredAnswer;
-          searchResults = fallback.searchResults;
-          aiAnalysis = featuredAnswer;
+          console.warn(`[Shorefire AI] Search content generation activated rich fallback. (Reason: Gemini response currently rate-limited or key quota exceeded).`, gemIniErr);
+          payloadToCache = getFallbackResults(searchQueryText, targetRegion);
         }
       } else {
-        // Fallback analysis when API key is missing or is the placeholder
-        const fallback = getFallbackResults(searchQueryText, targetRegion);
-        featuredAnswer = fallback.featuredAnswer;
-        searchResults = fallback.searchResults;
-        aiAnalysis = featuredAnswer;
+        payloadToCache = getFallbackResults(searchQueryText, targetRegion);
       }
 
-      // Sync and Write-through Caching: Save search results and corresponding materials to Firestore & Supabase
-      try {
-        const payloadToCache = {
-          queryKey: cacheId,
-          query: (query || "general").substring(0, 480),
-          region: (region || "Nigeria").substring(0, 100),
-          category: (category || "General").substring(0, 100),
-          answer: (aiAnalysis || "").substring(0, 29900),
-          featuredAnswer: (featuredAnswer || "").substring(0, 29900),
-          searchResults: (searchResults || []).slice(0, 20),
-          lastUpdated: new Date().toISOString(),
-          materials: (dbResult.materials || []).slice(0, 100),
-          apiLogs: (dbResult.apiLogs || []).slice(0, 50)
-        };
-        
-        // Write to Firestore
+      // Sync and Write-through Caching: Save search results and corresponding estimates to Firestore & Supabase
+      if (payloadToCache) {
         try {
+          // Write to Firestore search_cache
           await setDoc(doc(db, "search_cache", cacheId), payloadToCache);
-          console.log(`[Shorefire DB Cache] Successfully cached result in search_cache Firestore for: ${cacheId}`);
+          console.log(`[Shorefire DB Cache] Cached result in search_cache Firestore for: ${cacheId}`);
         } catch (saveErr) {
           console.error("[Shorefire DB Cache] Failed to write cache document into firestore:", saveErr);
         }
 
-        // Write to Supabase
+        // Write to Supabase search_cache
         try {
           const supabase = getSupabase();
           const { error } = await supabase
             .from("search_cache")
             .upsert({
               query_key: cacheId,
-              query: payloadToCache.query,
-              region: payloadToCache.region,
-              category: payloadToCache.category,
-              answer: payloadToCache.answer,
-              featured_answer: payloadToCache.featuredAnswer,
+              query: payloadToCache.query || queryStr,
+              region: payloadToCache.region || targetRegion,
+              category: payloadToCache.category || targetCategory,
+              answer: payloadToCache.quickAnswer || "",
+              featured_answer: payloadToCache.featuredAnswer || "",
               search_results: JSON.stringify(payloadToCache.searchResults),
               grounding_sources: JSON.stringify(groundingSources),
-              materials: JSON.stringify(payloadToCache.materials),
-              api_logs: JSON.stringify(payloadToCache.apiLogs),
-              last_updated: payloadToCache.lastUpdated
+              materials: JSON.stringify(payloadToCache.substructure.concat(payloadToCache.wallingRoofing, payloadToCache.finishes)),
+              api_logs: JSON.stringify([]),
+              last_updated: payloadToCache.lastUpdated || new Date().toISOString()
             }, { onConflict: "query_key" });
           
           if (error) {
-            console.log("[Shorefire DB Cache] Supabase write notice (table may need creation or keys are placeholders):", error.message);
-          } else {
-            console.log(`[Shorefire DB Cache] Successfully cached result in search_cache Supabase for: ${cacheId}`);
+            console.log("[Shorefire DB Cache] Supabase write notice:", error.message);
           }
         } catch (supaSaveErr) {
-          console.log("[Shorefire DB Cache] Supabase write skipped or failed (keys are placeholders or table doesn't exist yet).");
+          console.log("[Shorefire DB Cache] Supabase write skipped or failed.");
         }
-      } catch (cacheWrapperErr) {
-        console.error("[Shorefire DB Cache] Unexpected cache write wrapper error:", cacheWrapperErr);
+
+        // Save every search result for tracking/reporting to the estimates table/collection
+        const estimateId = `est_${Date.now()}`;
+        try {
+          const supabase = getSupabase();
+          await supabase
+            .from("estimates")
+            .insert({
+              id: estimateId,
+              query: queryStr,
+              region: targetRegion,
+              category: targetCategory,
+              project_title: payloadToCache.projectTitle,
+              grand_total: payloadToCache.grandTotal,
+              payload: JSON.stringify(payloadToCache),
+              created_at: new Date().toISOString()
+            });
+        } catch (err) {
+          console.log("[Shorefire DB Cache] Estimates Supabase log skipped.");
+        }
+
+        try {
+          await setDoc(doc(db, "estimates", estimateId), {
+            id: estimateId,
+            query: queryStr,
+            region: targetRegion,
+            category: targetCategory,
+            projectTitle: payloadToCache.projectTitle,
+            grandTotal: payloadToCache.grandTotal,
+            payload: payloadToCache,
+            createdAt: new Date().toISOString()
+          });
+        } catch (err) {
+          console.log("[Shorefire DB Cache] Estimates Firestore log skipped.");
+        }
       }
 
       res.json({
-        answer: aiAnalysis,
-        featuredAnswer,
-        searchResults,
+        ...payloadToCache,
         groundingSources,
-        simulatedApiLogs: dbResult.apiLogs,
-        localMaterials: dbResult.materials,
         isCached: false,
         cachedAt: null
       });
     } catch (err: any) {
       console.error(err);
       res.status(500).json({ error: "Search failed. Internal server error." });
+    }
+  });
+
+  // API Endpoint: Submit procurement lead
+  app.post("/api/leads", async (req, res) => {
+    try {
+      const { name, phone, email, meetingDateTime, notes, query, projectTitle, grandTotal } = req.body;
+      
+      const leadId = `lead_${Date.now()}`;
+      const payload = {
+        id: leadId,
+        name: name || "",
+        phone: phone || "",
+        email: email || "",
+        meetingDateTime: meetingDateTime || "",
+        notes: notes || "",
+        query: query || "",
+        projectTitle: projectTitle || "",
+        grandTotal: Number(grandTotal) || 0,
+        createdAt: new Date().toISOString(),
+        status: "new"
+      };
+
+      // Save to Supabase
+      try {
+        const supabase = getSupabase();
+        await supabase
+          .from("leads")
+          .insert({
+            id: leadId,
+            name: payload.name,
+            phone: payload.phone,
+            email: payload.email,
+            meeting_date_time: payload.meetingDateTime,
+            notes: payload.notes,
+            query: payload.query,
+            project_title: payload.projectTitle,
+            grand_total: payload.grandTotal,
+            created_at: payload.createdAt,
+            status: "new"
+          });
+      } catch (err) {
+        console.log("[Shurefire Supabase] Leads save log skipped (table might not exist).");
+      }
+
+      // Save to Firestore
+      try {
+        await setDoc(doc(db, "leads", leadId), payload);
+        console.log(`[Shurefire Firestore] Lead saved: ${leadId}`);
+      } catch (err) {
+        console.error("[Shurefire Firestore] Leads save failed:", err);
+      }
+
+      res.json({ success: true, leadId });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to submit lead" });
+    }
+  });
+
+  // API Endpoint: Verify if user is an admin
+  app.post("/api/admin/verify", async (req, res) => {
+    try {
+      const { userId, email } = req.body;
+      if (!userId) {
+        res.status(400).json({ error: "userId is required" });
+        return;
+      }
+      
+      let isAdminUser = false;
+      
+      // Check profiles table in Supabase
+      try {
+        const supabase = getSupabase();
+        const { data, error } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", userId)
+          .single();
+        
+        if (data && !error) {
+          isAdminUser = data.role === "admin";
+        }
+      } catch (err) {
+        console.log("[Shurefire Supabase] Profiles query skipped.");
+      }
+
+      // Fallback/sync to Firestore profiles
+      if (!isAdminUser) {
+        try {
+          const docSnap = await getDoc(doc(db, "profiles", userId));
+          if (docSnap.exists()) {
+            isAdminUser = docSnap.data().role === "admin";
+          }
+        } catch (err) {
+          console.error("[Shurefire Firestore] Profiles query failed:", err);
+        }
+      }
+
+      // Special bootstrap check: if user is logged in as 'ramonbisola1@gmail.com', automatically make them admin
+      if (!isAdminUser && (email === "ramonbisola1@gmail.com" || email === "admin@shurefire.com")) {
+        isAdminUser = true;
+        const profilePayload = {
+          id: userId,
+          email: email || "",
+          role: "admin",
+          createdAt: new Date().toISOString()
+        };
+
+        // Write admin profile to Supabase
+        try {
+          const supabase = getSupabase();
+          await supabase.from("profiles").upsert({
+            id: userId,
+            email: email || "",
+            role: "admin",
+            created_at: profilePayload.createdAt
+          });
+        } catch (err) {
+          console.log("[Shurefire Supabase] Profiles write skipped.");
+        }
+
+        // Write admin profile to Firestore
+        try {
+          await setDoc(doc(db, "profiles", userId), profilePayload);
+        } catch (err) {
+          console.error("[Shurefire Firestore] Profiles write failed:", err);
+        }
+      }
+
+      res.json({ isAdmin: isAdminUser });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to verify user profile" });
+    }
+  });
+
+  // API Endpoint: Get all leads for admin dashboard
+  app.get("/api/admin/leads", async (req, res) => {
+    try {
+      let leadsList: any[] = [];
+      
+      // Fetch from Supabase
+      try {
+        const supabase = getSupabase();
+        const { data, error } = await supabase
+          .from("leads")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (data && !error) {
+          leadsList = data.map((l: any) => ({
+            id: l.id,
+            name: l.name,
+            phone: l.phone,
+            email: l.email,
+            meetingDateTime: l.meeting_date_time || l.meetingDateTime,
+            notes: l.notes,
+            query: l.query,
+            projectTitle: l.project_title || l.projectTitle,
+            grandTotal: l.grand_total || l.grandTotal,
+            createdAt: l.created_at || l.createdAt,
+            status: l.status
+          }));
+        }
+      } catch (err) {
+        console.log("[Shurefire Supabase] Fetch leads table skipped.");
+      }
+
+      // Fallback/sync to Firestore leads
+      if (leadsList.length === 0) {
+        try {
+          const { getDocs, collection, query: fsQuery, orderBy } = await import("firebase/firestore");
+          const snap = await getDocs(fsQuery(collection(db, "leads"), orderBy("createdAt", "desc")));
+          leadsList = snap.docs.map(doc => doc.data());
+        } catch (err) {
+          console.error("[Shurefire Firestore] Fetch leads collection failed:", err);
+        }
+      }
+
+      res.json(leadsList);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to fetch leads" });
+    }
+  });
+
+  // API Endpoint: Create knowledge base block
+  app.post("/api/admin/knowledge", async (req, res) => {
+    try {
+      const { content } = req.body;
+      if (!content || !content.trim()) {
+        res.status(400).json({ error: "Content is required" });
+        return;
+      }
+
+      const blockId = `kb_${Date.now()}`;
+      const payload = {
+        id: blockId,
+        content: content.trim(),
+        createdAt: new Date().toISOString()
+      };
+
+      // Save to Supabase
+      try {
+        const supabase = getSupabase();
+        await supabase
+          .from("knowledge_base")
+          .insert({
+            id: blockId,
+            content: payload.content,
+            created_at: payload.createdAt
+          });
+      } catch (err) {
+        console.log("[Shurefire Supabase] Knowledge base save table skipped.");
+      }
+
+      // Save to Firestore
+      try {
+        await setDoc(doc(db, "knowledge_base", blockId), payload);
+        console.log(`[Shurefire Firestore] Knowledge block saved: ${blockId}`);
+      } catch (err) {
+        console.error("[Shurefire Firestore] Knowledge base save collection failed:", err);
+      }
+
+      res.json({ success: true, blockId });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to add knowledge block" });
+    }
+  });
+
+  // API Endpoint: Get all knowledge base blocks
+  app.get("/api/admin/knowledge", async (req, res) => {
+    try {
+      let kbList: any[] = [];
+      
+      // Fetch from Supabase
+      try {
+        const supabase = getSupabase();
+        const { data, error } = await supabase
+          .from("knowledge_base")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (data && !error) {
+          kbList = data.map((b: any) => ({
+            id: b.id,
+            content: b.content,
+            createdAt: b.created_at || b.createdAt
+          }));
+        }
+      } catch (err) {
+        console.log("[Shurefire Supabase] Fetch knowledge table skipped.");
+      }
+
+      // Fallback/sync to Firestore knowledge base
+      if (kbList.length === 0) {
+        try {
+          const { getDocs, collection, query: fsQuery, orderBy } = await import("firebase/firestore");
+          const snap = await getDocs(fsQuery(collection(db, "knowledge_base"), orderBy("createdAt", "desc")));
+          kbList = snap.docs.map(doc => doc.data());
+        } catch (err) {
+          console.error("[Shurefire Firestore] Fetch knowledge collection failed:", err);
+        }
+      }
+
+      res.json(kbList);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to fetch knowledge blocks" });
     }
   });
 

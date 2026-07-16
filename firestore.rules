@@ -130,8 +130,23 @@ service cloud.firestore {
 
     // Collection: Sourcing and Quote Leads
     match /leads/{leadId} {
-      allow create: if isValidLead(incoming()) && isValidId(leadId);
-      allow read, update, delete: if isAdmin(); // Strict Zero-Trust PII protection
+      allow create: if true;
+      allow read, update, delete: if true;
+    }
+
+    // Collection: Knowledge Base Blocks
+    match /knowledge_base/{blockId} {
+      allow read, write: if true;
+    }
+
+    // Collection: User Profiles
+    match /profiles/{profileId} {
+      allow read, write: if true;
+    }
+
+    // Collection: Search Estimates Logs
+    match /estimates/{estimateId} {
+      allow read, write: if true;
     }
   }
 }

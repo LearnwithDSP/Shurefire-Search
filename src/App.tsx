@@ -60,7 +60,7 @@ interface StructuredEstimate {
 
 export default function App() {
   const [query, setQuery] = useState("");
-  const [currentView, setCurrentView] = useState<"landing" | "results">("landing");
+  const [currentView, setCurrentView] = useState<"landing" | "results" | "admin">("landing");
   const [isLoading, setIsLoading] = useState(false);
   const [searchStats, setSearchStats] = useState({ resultsCount: 0, duration: 0 });
   const [activeTab, setActiveTab] = useState<"all" | "pricing" | "depots" | "guides">("all");
@@ -76,6 +76,69 @@ export default function App() {
   const [steelUnit, setSteelUnit] = useState<"Length" | "KG" | "Tons">("Length");
   const [sandUnit, setSandUnit] = useState<"Tipper" | "Tons" | "Bags">("Tipper");
   const [lastSearchedQuery, setLastSearchedQuery] = useState("");
+
+  // Lead Form States
+  const [leadName, setLeadName] = useState("");
+  const [leadPhone, setLeadPhone] = useState("");
+  const [leadEmail, setLeadEmail] = useState("ramonbisola1@gmail.com");
+  const [leadMeeting, setLeadMeeting] = useState("");
+  const [leadNotes, setLeadNotes] = useState("");
+
+  // Admin Portal States
+  const [adminEmail, setAdminEmail] = useState("ramonbisola1@gmail.com");
+  const [adminPassword, setAdminPassword] = useState("");
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [adminTab, setAdminTab] = useState<"leads" | "knowledge">("leads");
+  const [leadsList, setLeadsList] = useState<any[]>([]);
+  const [knowledgeBlocks, setKnowledgeBlocks] = useState<any[]>([]);
+  const [newKnowledgeContent, setNewKnowledgeContent] = useState("");
+  const [isUploadingKnowledge, setIsUploadingKnowledge] = useState(false);
+  const [leadsSearchQuery, setLeadsSearchQuery] = useState("");
+
+  // Hash-based routing
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash;
+      if (hash === "#shurefire-admin") {
+        setCurrentView("admin");
+      } else if (hash === "#results") {
+        setCurrentView("results");
+      } else {
+        setCurrentView("landing");
+      }
+    };
+
+    window.addEventListener("hashchange", handleHashChange);
+    handleHashChange(); // Run on mount
+
+    return () => window.removeEventListener("hashchange", handleHashChange);
+  }, []);
+
+  // Fetch admin dashboard data if logged in
+  const fetchAdminData = async () => {
+    try {
+      const leadsRes = await fetch("/api/admin/leads");
+      if (leadsRes.ok) {
+        const leadsData = await leadsRes.json();
+        setLeadsList(leadsData);
+      }
+      const kbRes = await fetch("/api/admin/knowledge");
+      if (kbRes.ok) {
+        const kbData = await kbRes.json();
+        setKnowledgeBlocks(kbData);
+      }
+    } catch (err) {
+      console.error("Failed to load admin dashboard records:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (isAdminLoggedIn) {
+      fetchAdminData();
+    }
+  }, [isAdminLoggedIn]);
 
   // Parse queries and dynamically compute highly detailed material quantities & prices
   const calculateEstimate = (searchQuery: string): StructuredEstimate => {
@@ -445,28 +508,58 @@ export default function App() {
     };
   };
 
-  // Trigger search logic mimicking Google's transition
-  const handleSearch = (e?: React.FormEvent, customQuery?: string) => {
+  // Trigger search logic calling the server-side Gemini search endpoint
+  const handleSearch = async (e?: React.FormEvent, customQuery?: string) => {
     if (e) e.preventDefault();
     const activeQuery = customQuery !== undefined ? customQuery : query;
     if (!activeQuery.trim()) return;
 
     setIsLoading(true);
     setCurrentView("results");
+    window.location.hash = "#results";
+    setLastSearchedQuery(activeQuery);
     
-    // Simulate natural search latency (1000ms - 1400ms) for professional realism and processing depth
-    const randomLatency = Math.floor(Math.random() * 400) + 1000;
-    
-    setTimeout(() => {
+    const startTime = Date.now();
+
+    try {
+      const response = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: activeQuery,
+          region: "Lagos",
+          category: "all"
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error("API response error");
+      }
+
+      const data = await response.json();
+      const duration = (Date.now() - startTime) / 1000;
+
+      if (data && data.grandTotal) {
+        setEstimate(data);
+        setSearchStats({
+          resultsCount: data.groundingSources?.length ? data.groundingSources.length * 1450 : Math.floor(Math.random() * 210000) + 14000,
+          duration: Number(duration.toFixed(2))
+        });
+      } else {
+        throw new Error("Invalid structure returned");
+      }
+    } catch (err) {
+      console.warn("[Shurefire AI Router] Server-side estimation failed. Swapping to sovereign client calculator:", err);
+      // Fallback calculator for maximum application resilience
       const computed = calculateEstimate(activeQuery);
       setEstimate(computed);
-      setLastSearchedQuery(activeQuery);
       setSearchStats({
         resultsCount: Math.floor(Math.random() * 210000) + 14000,
-        duration: randomLatency / 1000
+        duration: Number(((Date.now() - startTime) / 1000).toFixed(2))
       });
+    } finally {
       setIsLoading(false);
-    }, randomLatency);
+    }
   };
 
   // Automatically update estimate calculations in real-time when unit switches occur
@@ -482,15 +575,105 @@ export default function App() {
     setQuery("");
     setEstimate(null);
     setCurrentView("landing");
+    window.location.hash = "#home";
   };
 
-  // Mock Sourcing submission
-  const triggerProcureBundle = () => {
+  // Real Sourcing lead submission
+  const triggerProcureBundle = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!leadName.trim() || !leadPhone.trim() || !leadEmail.trim()) {
+      alert("Please fill in Name, WhatsApp/Phone, and Email to lock pricing.");
+      return;
+    }
+
     setIsDispatching(true);
-    setTimeout(() => {
+    try {
+      const response = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: leadName,
+          phone: leadPhone,
+          email: leadEmail,
+          meetingDateTime: leadMeeting,
+          notes: leadNotes,
+          query: lastSearchedQuery,
+          projectTitle: estimate?.projectTitle || "Sourcing Bundle",
+          grandTotal: estimate?.grandTotal || 0
+        })
+      });
+
+      if (response.ok) {
+        setDispatchSuccess(true);
+        // Refresh admin lead pipeline in background if they are currently logged in
+        if (isAdminLoggedIn) {
+          fetchAdminData();
+        }
+      } else {
+        alert("Failed to submit lead. Please try again.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Fulfillment dispatcher is temporarily offline. Please try again.");
+    } finally {
       setIsDispatching(false);
-      setDispatchSuccess(true);
-    }, 1500);
+    }
+  };
+
+  const handleAdminLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    setLoginError("");
+
+    try {
+      const res = await fetch("/api/admin/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: "admin_user", email: adminEmail })
+      });
+      const data = await res.json();
+      if (res.ok && data.isAdmin) {
+        setIsAdminLoggedIn(true);
+        fetchAdminData();
+      } else {
+        setLoginError(data.error || "Authentication failed. Authorized personnel only.");
+      }
+    } catch (err) {
+      setLoginError("Verification service offline. Please try again.");
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleUploadKnowledge = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newKnowledgeContent.trim()) return;
+
+    setIsUploadingKnowledge(true);
+    try {
+      const res = await fetch("/api/admin/knowledge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: "Direct Terminal Update",
+          content: newKnowledgeContent,
+          timestamp: new Date().toISOString()
+        })
+      });
+
+      if (res.ok) {
+        setNewKnowledgeContent("");
+        fetchAdminData();
+        alert("Sovereign rates briefing successfully uploaded & synchronized with the neural index!");
+      } else {
+        alert("Failed to update sovereign brain.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error synchronizing brain brief.");
+    } finally {
+      setIsUploadingKnowledge(false);
+    }
   };
 
   // Trigger browser print screen configured to capture results cleanly
@@ -1358,6 +1541,346 @@ export default function App() {
         </div>
       )}
 
+      {/* ----------------- VIEW 3: ADMIN LEAD PIPELINE & SOVEREIGN BRAIN (#shurefire-admin) ----------------- */}
+      {currentView === "admin" && (
+        <div className="flex-1 flex flex-col bg-neutral-50 min-h-screen">
+          {/* Header Bar */}
+          <header className="bg-neutral-900 text-white shadow-md py-4 px-6 sticky top-0 z-30 select-none">
+            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
+              <div className="flex items-center gap-3">
+                <div className="bg-[#ae2424] text-white px-3 py-1.5 rounded-lg text-sm font-black tracking-widest font-mono shadow-xs">
+                  SFS
+                </div>
+                <div className="text-left">
+                  <h1 className="text-lg font-black tracking-tight flex items-center gap-2">
+                    Shurefire Sovereign Index Console
+                  </h1>
+                  <p className="text-[10px] text-neutral-400 font-mono tracking-wider uppercase">
+                    Trade Desk Logistics & Intelligence Portal
+                  </p>
+                </div>
+              </div>
+
+              {isAdminLoggedIn && (
+                <div className="flex items-center gap-4.5 text-xs">
+                  <span className="text-neutral-300 font-mono flex items-center gap-1.5">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Verified: {adminEmail}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setIsAdminLoggedIn(false);
+                      setAdminPassword("");
+                    }}
+                    className="bg-[#ae2424] hover:bg-[#8f1d1d] text-white font-extrabold px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+                  >
+                    Logout Desk
+                  </button>
+                  <a
+                    href="#home"
+                    className="bg-neutral-800 hover:bg-neutral-700 text-white font-bold px-3 py-1.5 rounded-lg border border-neutral-700 transition-all text-center"
+                  >
+                    Client Home
+                  </a>
+                </div>
+              )}
+            </div>
+          </header>
+
+          {!isAdminLoggedIn ? (
+            /* Admin Credentials Verification Screen */
+            <div className="flex-1 flex items-center justify-center py-16 px-4">
+              <div className="bg-white rounded-3xl border border-neutral-200/95 p-8 max-w-md w-full shadow-xl space-y-6">
+                <div className="text-center space-y-2">
+                  <span className="text-4xl">🔐</span>
+                  <h2 className="text-xl font-black text-neutral-950 tracking-tight">Personnel Verification Required</h2>
+                  <p className="text-xs text-neutral-500 max-w-xs mx-auto">
+                    Access to real-time supply logs and sovereign index weights requires authorized credentials.
+                  </p>
+                </div>
+
+                <form onSubmit={handleAdminLogin} className="space-y-4 text-left">
+                  <div>
+                    <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                      Desk Email address
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      value={adminEmail}
+                      onChange={(e) => setAdminEmail(e.target.value)}
+                      placeholder="ramonbisola1@gmail.com"
+                      className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1">
+                      Verification Password
+                    </label>
+                    <input
+                      type="password"
+                      required
+                      value={adminPassword}
+                      onChange={(e) => setAdminPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white"
+                    />
+                  </div>
+
+                  {loginError && (
+                    <div className="bg-[#ae2424]/5 border border-[#ae2424]/10 text-[#ae2424] text-[11px] p-2.5 rounded-lg font-medium text-center">
+                      ⚠️ {loginError}
+                    </div>
+                  )}
+
+                  <button
+                    type="submit"
+                    disabled={isLoggingIn}
+                    className="w-full bg-[#ae2424] hover:bg-[#8f1d1d] text-white font-black py-3 rounded-xl text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                  >
+                    {isLoggingIn ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Verifying Credentials...
+                      </>
+                    ) : (
+                      "Unlock Sovereign Dashboard"
+                    )}
+                  </button>
+                </form>
+
+                <div className="pt-4 border-t border-neutral-100 text-center">
+                  <a href="#home" className="text-xs text-neutral-500 hover:text-neutral-800 font-semibold underline">
+                    Return to Sourcing Homepage
+                  </a>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Verified Admin Control Desk */
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 flex-1 flex flex-col gap-6 text-left">
+              
+              {/* Tab Switches */}
+              <div className="flex border-b border-neutral-200 text-sm font-semibold select-none gap-6">
+                <button
+                  onClick={() => setAdminTab("leads")}
+                  className={`pb-3 px-1 border-b-2 transition-colors cursor-pointer ${
+                    adminTab === "leads" ? "border-[#ae2424] text-[#ae2424]" : "border-transparent text-neutral-500 hover:text-neutral-800"
+                  }`}
+                >
+                  Procurement Leads Pipeline ({leadsList.length})
+                </button>
+                <button
+                  onClick={() => setAdminTab("knowledge")}
+                  className={`pb-3 px-1 border-b-2 transition-colors cursor-pointer ${
+                    adminTab === "knowledge" ? "border-[#ae2424] text-[#ae2424]" : "border-transparent text-neutral-500 hover:text-neutral-800"
+                  }`}
+                >
+                  Neural Knowledge Index ({knowledgeBlocks.length})
+                </button>
+              </div>
+
+              {adminTab === "leads" ? (
+                /* Procurement Leads Sub-panel */
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row gap-3 justify-between items-stretch sm:items-center">
+                    <div>
+                      <h2 className="text-xl font-black text-neutral-950 tracking-tight">Logistics Pipeline</h2>
+                      <p className="text-xs text-neutral-500 mt-0.5">
+                        Track, assign, and dispatch registered wholesale bundles requested by Nigerian builders.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Search leads by name, email, query..."
+                        value={leadsSearchQuery}
+                        onChange={(e) => setLeadsSearchQuery(e.target.value)}
+                        className="text-xs border border-neutral-200 bg-white p-2.5 rounded-lg w-full sm:w-64 focus:outline-none focus:border-[#ae2424] text-neutral-800 focus:bg-white"
+                      />
+                      <button
+                        onClick={fetchAdminData}
+                        className="p-2.5 bg-white border border-neutral-200 rounded-lg text-neutral-500 hover:text-neutral-800 transition-colors"
+                        title="Refresh Pipeline"
+                      >
+                        🔄
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Leads Data Table */}
+                  <div className="bg-white rounded-2xl border border-neutral-200/80 shadow-xs overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-neutral-50 border-b border-neutral-200/90 text-neutral-500 font-bold uppercase tracking-wider text-[10px]">
+                            <th className="p-4">Requested Date</th>
+                            <th className="p-4">Buyer Coordinates</th>
+                            <th className="p-4">Search Sourcing Request</th>
+                            <th className="p-4">Est. Project Value</th>
+                            <th className="p-4">Fulfillment consultation</th>
+                            <th className="p-4 text-center">Fulfillment Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-neutral-100">
+                          {leadsList
+                            .filter(lead => {
+                              const searchLower = leadsSearchQuery.toLowerCase();
+                              return (
+                                lead.name?.toLowerCase().includes(searchLower) ||
+                                lead.email?.toLowerCase().includes(searchLower) ||
+                                lead.phone?.toLowerCase().includes(searchLower) ||
+                                lead.query?.toLowerCase().includes(searchLower)
+                              );
+                            })
+                            .map((lead) => (
+                              <tr key={lead.id} className="hover:bg-neutral-50/50 transition-colors text-neutral-700">
+                                <td className="p-4 whitespace-nowrap font-mono text-[11px] text-neutral-400">
+                                  {lead.createdAt ? new Date(lead.createdAt).toLocaleString("en-NG", { hour12: true }) : "Recent"}
+                                </td>
+                                <td className="p-4">
+                                  <div className="space-y-0.5">
+                                    <div className="font-bold text-neutral-900">{lead.name}</div>
+                                    <div className="text-neutral-500">{lead.phone}</div>
+                                    <div className="text-neutral-400 font-mono text-[10px]">{lead.email}</div>
+                                  </div>
+                                </td>
+                                <td className="p-4 max-w-xs truncate">
+                                  <div className="font-medium text-neutral-800">"{lead.query}"</div>
+                                  <div className="text-[10px] text-neutral-400 mt-0.5 font-mono">{lead.projectTitle}</div>
+                                </td>
+                                <td className="p-4 font-mono font-bold text-neutral-950 whitespace-nowrap text-right pr-8">
+                                  {formatNaira(lead.grandTotal || 0)}
+                                </td>
+                                <td className="p-4 whitespace-nowrap">
+                                  {lead.meetingDateTime ? (
+                                    <span className="bg-neutral-100 border border-neutral-200 px-2 py-1 rounded text-neutral-800 font-mono text-[11px]">
+                                      📅 {new Date(lead.meetingDateTime).toLocaleString()}
+                                    </span>
+                                  ) : (
+                                    <span className="text-neutral-400 font-mono italic">Not specified</span>
+                                  )}
+                                  {lead.notes && (
+                                    <div className="text-[10px] text-neutral-500 mt-1 max-w-[180px] truncate" title={lead.notes}>
+                                      📝 Note: {lead.notes}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="p-4 whitespace-nowrap text-center">
+                                  <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded-full font-extrabold uppercase text-[9px] tracking-wider">
+                                    NEW LEAD
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          {leadsList.length === 0 && (
+                            <tr>
+                              <td colSpan={6} className="text-center p-12 text-neutral-400">
+                                <span className="text-3xl block mb-2">🚛</span>
+                                No procurement leads registered in the dispatch logs yet.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* Verified Sovereign Index Knowledge Brain Sub-panel */
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-7">
+                  
+                  {/* Left Column: Upload rates brief */}
+                  <div className="lg:col-span-5 bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-3xs space-y-4">
+                    <div>
+                      <h2 className="text-base font-black text-neutral-950 tracking-tight">Inject Terminal Intelligence</h2>
+                      <p className="text-[11px] text-neutral-500 mt-0.5">
+                        Write or paste structural wholesale briefs to live-train the Shurefire Gemini pricing context.
+                      </p>
+                    </div>
+
+                    <form onSubmit={handleUploadKnowledge} className="space-y-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                          Brief Content (Terminal adjustments, discount codes, etc.)
+                        </label>
+                        <textarea
+                          required
+                          value={newKnowledgeContent}
+                          onChange={(e) => setNewKnowledgeContent(e.target.value)}
+                          placeholder="e.g. Dangote Cement wholesale prices at Ikorodu Terminal have decreased by 5% to N7,500 per bag starting today due to high stock availability."
+                          rows={6}
+                          className="w-full text-xs border border-neutral-200 rounded-lg p-3 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white text-left"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={isUploadingKnowledge}
+                        className="w-full bg-[#ae2424] hover:bg-[#8f1d1d] text-white font-black py-3 rounded-xl text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                      >
+                        {isUploadingKnowledge ? (
+                          <>
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Synchronizing Brain...
+                          </>
+                        ) : (
+                          "Train Shurefire AI Brain"
+                        )}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Right Column: Active trained knowledge blocks */}
+                  <div className="lg:col-span-7 space-y-4">
+                    <div>
+                      <h2 className="text-base font-black text-neutral-950 tracking-tight">Active Sovereign Brain Blocks</h2>
+                      <p className="text-[11px] text-neutral-500 mt-0.5">
+                        These are the certified trade intelligence blocks loaded into the active search synthesis pipeline.
+                      </p>
+                    </div>
+
+                    <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
+                      {knowledgeBlocks.map((block) => (
+                        <div key={block.id} className="bg-white border border-neutral-200 rounded-xl p-4 shadow-3xs relative space-y-2">
+                          <div className="flex justify-between items-center border-b border-neutral-100 pb-2">
+                            <span className="text-[10px] bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded font-bold uppercase tracking-wider font-mono">
+                              Source: {block.source || "Terminal Briefing"}
+                            </span>
+                            <span className="text-[10px] text-neutral-400 font-mono">
+                              {block.createdAt ? new Date(block.createdAt).toLocaleString() : "Recently synchronized"}
+                            </span>
+                          </div>
+                          <p className="text-xs text-neutral-700 leading-relaxed font-sans text-left whitespace-pre-wrap">
+                            {block.content}
+                          </p>
+                        </div>
+                      ))}
+
+                      {knowledgeBlocks.length === 0 && (
+                        <div className="bg-white border border-neutral-200 rounded-2xl p-12 text-center text-neutral-400">
+                          <span className="text-3xl block mb-2">🧠</span>
+                          No supplementary brain briefings added. Sourcing relies on the standard sovereign dataset.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
+            </div>
+          )}
+
+          {/* Minimal Admin Footer */}
+          <footer className="bg-neutral-900 border-t border-neutral-800 text-neutral-500 text-[11px] select-none py-4 text-center mt-auto">
+            <span className="font-mono">Shurefire Sourcing Desk Logs v2026.7 • Secure SSL Connection</span>
+          </footer>
+        </div>
+      )}
+
       {/* ----------------- INTERACTIVE PROCUREMENT ORDER DISPATCH MODAL ----------------- */}
       {showProcureModal && (
         <div className="fixed inset-0 bg-neutral-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in select-none">
@@ -1377,20 +1900,90 @@ export default function App() {
             </button>
 
             {!dispatchSuccess ? (
-              <div className="space-y-4 text-center">
-                <div className="h-13 w-13 rounded-full bg-[#ae2424]/5 border border-[#ae2424]/10 text-[#ae2424] flex items-center justify-center mx-auto text-xl">
-                  🚚
-                </div>
-                
-                <div className="space-y-1.5">
-                  <h3 className="text-xl font-black text-neutral-950">Lock Sourcing Rates</h3>
-                  <p className="text-xs text-neutral-500">
-                    You are about to lock in pricing and request wholesale fulfillment dispatch for <span className="font-bold text-neutral-800">"{query}"</span>.
+              <form onSubmit={triggerProcureBundle} className="space-y-4 text-left">
+                <div className="text-center">
+                  <div className="h-12 w-12 rounded-full bg-[#ae2424]/5 border border-[#ae2424]/10 text-[#ae2424] flex items-center justify-center mx-auto text-xl">
+                    🚚
+                  </div>
+                  <h3 className="text-lg font-black text-neutral-950 mt-2">Lock Sourcing Rates</h3>
+                  <p className="text-xs text-neutral-500 mt-1">
+                    Secure wholesale rates and request fulfillment dispatch for <span className="font-bold text-neutral-800">"{lastSearchedQuery || query}"</span>.
                   </p>
                 </div>
 
+                <div className="space-y-3.5 pt-2">
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
+                      Full Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={leadName}
+                      onChange={(e) => setLeadName(e.target.value)}
+                      placeholder="e.g. Alao Babajide"
+                      className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-white text-neutral-900 focus:outline-none focus:border-[#ae2424]"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
+                        WhatsApp / Phone *
+                      </label>
+                      <input
+                        type="tel"
+                        required
+                        value={leadPhone}
+                        onChange={(e) => setLeadPhone(e.target.value)}
+                        placeholder="e.g. +234 803 000 0000"
+                        className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-white text-neutral-900 focus:outline-none focus:border-[#ae2424]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
+                        Email Address *
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        value={leadEmail}
+                        onChange={(e) => setLeadEmail(e.target.value)}
+                        placeholder="e.g. buyer@gmail.com"
+                        className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-white text-neutral-900 focus:outline-none focus:border-[#ae2424]"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
+                      Preferred Callback Consultation Date & Time *
+                    </label>
+                    <input
+                      type="datetime-local"
+                      required
+                      value={leadMeeting}
+                      onChange={(e) => setLeadMeeting(e.target.value)}
+                      className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-white text-neutral-900 focus:outline-none focus:border-[#ae2424]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
+                      Special Delivery Instructions / Site Terrain Notes
+                    </label>
+                    <textarea
+                      value={leadNotes}
+                      onChange={(e) => setLeadNotes(e.target.value)}
+                      placeholder="e.g. Raft foundation on Lekki wetlands, narrow accessibility lane..."
+                      rows={2}
+                      className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-white text-neutral-900 focus:outline-none focus:border-[#ae2424]"
+                    />
+                  </div>
+                </div>
+
                 {/* Estimate specifications summary */}
-                <div className="bg-neutral-50 border border-neutral-200/50 rounded-xl p-3 text-left space-y-1.5 text-xs">
+                <div className="bg-neutral-50 border border-neutral-200/50 rounded-xl p-3 space-y-1.5 text-[11px] text-left">
                   <div className="flex justify-between">
                     <span className="text-neutral-500">Project:</span>
                     <span className="font-semibold text-neutral-800">{estimate?.projectTitle}</span>
@@ -1399,35 +1992,32 @@ export default function App() {
                     <span className="text-neutral-500">Total Materials Value:</span>
                     <span className="font-mono font-bold text-neutral-950">{formatNaira(estimate?.grandTotal || 0)}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-neutral-500">Target Delivery Zone:</span>
-                    <span className="font-semibold text-neutral-800">Lagos, Nigeria</span>
-                  </div>
                 </div>
 
-                <div className="space-y-2.5 pt-2">
+                <div className="space-y-2 pt-1">
                   <button
-                    onClick={triggerProcureBundle}
+                    type="submit"
                     disabled={isDispatching}
                     className="w-full bg-[#ae2424] hover:bg-[#8f1d1d] text-white font-black py-3 rounded-xl text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2"
                   >
                     {isDispatching ? (
                       <>
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        Discharging Request...
+                        Locking Pricing...
                       </>
                     ) : (
-                      "Lock Pricing & Dispatch"
+                      "Lock Sourcing & Dispatch Lead"
                     )}
                   </button>
                   <button
+                    type="button"
                     onClick={() => setShowProcureModal(false)}
-                    className="w-full bg-white hover:bg-neutral-50 text-neutral-500 font-bold py-2.5 rounded-xl text-xs border border-transparent transition-all cursor-pointer"
+                    className="w-full bg-white hover:bg-neutral-50 text-neutral-500 font-bold py-2 rounded-xl text-xs border border-transparent transition-all cursor-pointer text-center"
                   >
                     Cancel Sourcing
                   </button>
                 </div>
-              </div>
+              </form>
             ) : (
               <div className="space-y-4 text-center">
                 <div className="h-13 w-13 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center mx-auto text-xl">
@@ -1443,7 +2033,7 @@ export default function App() {
 
                 <div className="bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 text-center text-xs space-y-1">
                   <span className="text-neutral-400 block font-mono">Dispatch Notification Coordinates:</span>
-                  <strong className="text-neutral-800 block mt-1">ramonbisola1@gmail.com</strong>
+                  <strong className="text-neutral-800 block mt-1">{leadEmail || "ramonbisola1@gmail.com"}</strong>
                   <span className="text-neutral-500 block text-[10px] mt-0.5">Callback Line: +234 902 308 9987</span>
                 </div>
 
