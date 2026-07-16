@@ -1,17 +1,21 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Shurefire | Sovereign Materials Intelligence & Direct Factory Match Network</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Supabase JS Client CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <!-- Configuration Variables and Client Initialization -->
     <script>
-      const SUPABASE_URL = "https://ickghlgpkikwrelabayo.supabase.co";
-      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlja2dobGdwa2lrd3JlbGFiYXlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMDM0MjgsImV4cCI6MjA5OTc3OTQyOH0.PdnGKbglH2Yc0tWjnlXEgjr53HN6L9lUals6I0G5Cvc";
+      // 1. Declare them with VITE_ prefix for your React/TypeScript code
+      const VITE_SUPABASE_URL = "https://ickghlgpkikwrelabayo.supabase.co";
+      const VITE_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlja2dobGdwa2lrd3JlbGFiYXlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMDM0MjgsImV4cCI6MjA5OTc3OTQyOH0.PdnGKbglH2Yc0tWjnlXEgjr53HN6L9lUals6I0G5Cvc";
+      
+      // 2. Declare them without prefix for this local CDN script
+      const SUPABASE_URL = VITE_SUPABASE_URL;
+      const SUPABASE_ANON_KEY = VITE_SUPABASE_ANON_KEY;
+
+      // Expose them globally on the window object so all files can see them
+      window.SUPABASE_URL = SUPABASE_URL;
+      window.SUPABASE_ANON_KEY = SUPABASE_ANON_KEY;
+      window.VITE_SUPABASE_URL = VITE_SUPABASE_URL;
+      window.VITE_SUPABASE_ANON_KEY = VITE_SUPABASE_ANON_KEY;
+
       // Initialize Supabase Client
       if (typeof supabase !== 'undefined') {
         const { createClient } = supabase;
