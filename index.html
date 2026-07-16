@@ -8,8 +8,12 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
     <script>
-      const REAL_URL = "https://ickghlgpkikwrelabayo.supabase.co";
-      const REAL_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlja2dobGdwa2lrd3JlbGFiYXlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMDM0MjgsImV4cCI6MjA5OTc3OTQyOH0.PdnGKbglH2Yc0tWjnlXEgjr53HN6L9lUals6I0G5Cvc";
+      // Sanitized raw credentials (trimmed of any accidental spaces/quotes)
+      const RAW_URL = "https://ickghlgpkikwrelabayo.supabase.co";
+      const RAW_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlja2dobGdwa2lrd3JlbGFiYXlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMDM0MjgsImV4cCI6MjA5OTc3OTQyOH0.PdnGKbglH2Yc0tWjnlXEgjr53HN6L9lUals6I0G5Cvc";
+
+      const REAL_URL = RAW_URL.trim().replace(/^["']|["']$/g, "");
+      const REAL_KEY = RAW_KEY.trim().replace(/^["']|["']$/g, "");
 
       // 1. Establish Globals
       window.SUPABASE_URL = REAL_URL;
@@ -20,15 +24,16 @@
       const SUPABASE_URL = REAL_URL;
       const SUPABASE_ANON_KEY = REAL_KEY;
 
-      // 2. Intercept and Rewrite Network Traffic
+      // 2. Intercept and Rewrite Network Traffic + Inject Required Headers
       const originalFetch = window.fetch;
       window.fetch = async function(...args) {
         let url = args[0];
+        let options = args[1] || {};
 
         if (typeof url === 'string') {
           // Rule A: Intercept the config fetch
           if (url.includes('/api/supabase-config')) {
-            console.log("⚡ [Shurefire Interceptor] Injecting real credentials into config request.");
+            console.log("⚡ [Shurefire Interceptor] Injecting clean credentials into config request.");
             return new Response(JSON.stringify({
               SUPABASE_URL: REAL_URL,
               SUPABASE_ANON_KEY: REAL_KEY,
@@ -40,11 +45,26 @@
             });
           }
 
-          // Rule B: Redirect any calls made to the fake placeholder domain to your real Supabase instance
+          // Rule B: Redirect any calls made to the fake placeholder domain
           if (url.includes('your-supabase-project-id.supabase.co')) {
             const rewrittenUrl = url.replace('your-supabase-project-id.supabase.co', 'ickghlgpkikwrelabayo.supabase.co');
-            console.log(`⚡ [Shurefire Interceptor] Redirecting fake API call: ${url} -> ${rewrittenUrl}`);
+            console.log(`⚡ [Shurefire Interceptor] Redirecting: ${url} -> ${rewrittenUrl}`);
+            url = rewrittenUrl;
             args[0] = rewrittenUrl;
+          }
+
+          // Rule C: Force exact Auth Header Injection for the redirected request
+          if (url.includes('ickghlgpkikwrelabayo.supabase.co')) {
+            options.headers = options.headers || {};
+            // If it's a Headers object, set it there; otherwise, treat it as a plain object
+            if (options.headers instanceof Headers) {
+              options.headers.set('apikey', REAL_KEY);
+              options.headers.set('Authorization', `Bearer ${REAL_KEY}`);
+            } else {
+              options.headers['apikey'] = REAL_KEY;
+              options.headers['Authorization'] = `Bearer ${REAL_KEY}`;
+            }
+            args[1] = options;
           }
         }
 
