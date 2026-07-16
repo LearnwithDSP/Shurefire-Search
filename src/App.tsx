@@ -651,34 +651,23 @@ export default function App() {
     setLoginError("");
 
     try {
-      const supabase = getSupabase();
-      
-      // 1. Call Supabase Auth to register the user
-      const { data, error } = await supabase.auth.signUp({
-        email: adminEmail,
-        password: adminPassword,
-        options: { data: { full_name: adminFullName } }
+      const res = await fetch("/api/admin/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: adminEmail,
+          password: adminPassword,
+          fullName: adminFullName
+        })
       });
 
-      if (error) {
-        throw new Error(error.message);
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Registration failed. Please try again.");
       }
 
-      if (data?.user) {
-        // 2. Update their profile record's role column to 'shurefire_admin' in the profiles table
-        const { error: profileError } = await supabase
-          .from("profiles")
-          .update({ role: "shurefire_admin", full_name: adminFullName })
-          .eq("id", data.user.id);
-
-        if (profileError) {
-          console.warn("Update role failed, trying upsert fallback:", profileError);
-          // Try upserting directly
-          await supabase
-            .from("profiles")
-            .upsert({ id: data.user.id, full_name: adminFullName, role: "shurefire_admin" });
-        }
-
+      if (data?.success) {
         alert("Sovereign Admin account successfully registered! Please log in.");
         setAdminAction("login");
       } else {
@@ -697,51 +686,24 @@ export default function App() {
     setLoginError("");
 
     try {
-      const supabase = getSupabase();
-      // 1. Call Supabase Auth to sign in
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: adminEmail,
-        password: adminPassword,
+      const res = await fetch("/api/admin/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: adminEmail,
+          password: adminPassword
+        })
       });
 
-      if (error) {
-        // Fallback for bootstrap check (ramonbisola1@gmail.com and admin@shurefire.com can log in offline if Supabase is placeholder)
-        if (adminEmail === "ramonbisola1@gmail.com" || adminEmail === "admin@shurefire.com") {
-          setIsAdminLoggedIn(true);
-          fetchAdminData();
-          return;
-        }
-        throw new Error(error.message);
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Verification failed.");
       }
 
-      if (data?.user) {
-        // 2. Check their profile role
-        const { data: profile, error: profileError } = await supabase
-          .from("profiles")
-          .select("role")
-          .eq("id", data.user.id)
-          .single();
-
-        if (profileError) {
-          console.warn("Failed profile check, trying upsert fallback for main user");
-          if (adminEmail === "ramonbisola1@gmail.com" || adminEmail === "admin@shurefire.com") {
-            // Self-repair user role
-            await supabase
-              .from("profiles")
-              .upsert({ id: data.user.id, email: adminEmail, role: "shurefire_admin" });
-            setIsAdminLoggedIn(true);
-            fetchAdminData();
-            return;
-          }
-          throw new Error("Could not retrieve profile permissions.");
-        }
-
-        if (profile && (profile.role === "shurefire_admin" || profile.role === "admin")) {
-          setIsAdminLoggedIn(true);
-          fetchAdminData();
-        } else {
-          setLoginError("Verification failed. Authorized 'shurefire_admin' personnel only.");
-        }
+      if (data?.success && data?.user) {
+        setIsAdminLoggedIn(true);
+        fetchAdminData();
       } else {
         setLoginError("Could not retrieve active session.");
       }
