@@ -15,7 +15,8 @@ import {
   Info, 
   AlertTriangle,
   Calculator,
-  RefreshCw
+  RefreshCw,
+  HelpCircle
 } from "lucide-react";
 import { NIGERIAN_SUPPLIERS } from "./mockDatabase";
 import { getSupabase } from "./supabase";
@@ -28,6 +29,59 @@ const formatNaira = (value: number) => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
   }).format(value).replace("NGN", "₦");
+};
+
+const getExplanationForMaterial = (name: string): string | undefined => {
+  const lowerName = name.toLowerCase();
+  if (lowerName.includes("cement") && (lowerName.includes("42.5r") || lowerName.includes("dangote"))) {
+    return "Grade 42.5R Cement: High-grade cement designed for high early strength. Best suited for load-bearing structures like columns, beams, suspended slabs, and heavy foundations.";
+  }
+  if (lowerName.includes("cement") && (lowerName.includes("32.5n") || lowerName.includes("bua"))) {
+    return "Grade 32.5N Cement: Standard strength cement optimized for general block laying, plastering, rendering, and non-structural mortar joints.";
+  }
+  if (lowerName.includes("16mm") || lowerName.includes("16mm tmt")) {
+    return "16mm Rebars: Heavy thermo-mechanically treated (TMT) steel reinforcement bars. Used as the main structural steel core for load-bearing columns and beams.";
+  }
+  if (lowerName.includes("12mm") || lowerName.includes("12mm high-tension")) {
+    return "12mm Rebars: High-tension ribbed steel reinforcement bars, primarily used for floor slab mesh grids, lintels, and wrapping stirrup ties.";
+  }
+  if (lowerName.includes("sharp clean sand") || lowerName.includes("sharp sand")) {
+    return "Sharp Sand: Coarse aggregates free of organic silt/clay, absolutely critical for high-strength concrete mixes. Bad sand triggers weak concrete.";
+  }
+  if (lowerName.includes("plastering sand")) {
+    return "Plastering Sand: Fine-screened, clay-free soft sand optimized for a crack-free smooth cement render finish on walls.";
+  }
+  if (lowerName.includes("granite")) {
+    return "Crushed Granite: Extremely hard coarse aggregate stones (typically 3/4 inch). They provide the fundamental bulk compression load capacity inside concrete.";
+  }
+  if (lowerName.includes("membrane") || lowerName.includes("nylon")) {
+    return "Anti-Moisture Membrane: A thick, heavy-duty damp-proof course (DPC) nylon barrier laid before concrete pouring to block capillary ground water rise.";
+  }
+  if (lowerName.includes("block") || lowerName.includes("hollow masonry")) {
+    return "9-Inch Hollow Blocks: Machine-vibrated concrete walling blocks. Vibration compacts the mix to guarantee high structural load capacity.";
+  }
+  if (lowerName.includes("roofing") || lowerName.includes("aluminum")) {
+    return "0.55mm Roofing Sheets: Premium, thick rust-resistant aluminum cladding sheets. Standard 0.55mm thickness avoids sagging and ensures weather endurance.";
+  }
+  if (lowerName.includes("timber") || lowerName.includes("rafter")) {
+    return "Hardwood Timber: Treated local hardwood (e.g. mahogany or opepe) for roof framing. Resists termite attacks, warping, and bending under high roof loads.";
+  }
+  if (lowerName.includes("tiles")) {
+    return "Vitrified Tiles: Extremely low-porosity glazed tiles baked at very high temperatures. Fully water-impermeable, stain-proof, and highly scratch-resistant.";
+  }
+  if (lowerName.includes("paint") || lowerName.includes("emulsion")) {
+    return "Acrylic Emulsion Paint: High-quality elastic binding polymer coating. Excellent weather endurance, washability, and long-term protection against wall mold.";
+  }
+  if (lowerName.includes("door") || lowerName.includes("hardwood")) {
+    return "Solid Hardwood Doors: Non-warping, dense wooden internal doors. Provide excellent acoustic insulation and resist swelling during seasonal humidity.";
+  }
+  if (lowerName.includes("plumbing") || lowerName.includes("piping")) {
+    return "Plumbing Piping Kit: Thick-walled high-pressure PVC conduits and drainage fittings. Vital for avoiding leaks inside concrete slab structures.";
+  }
+  if (lowerName.includes("pop") || lowerName.includes("plaster of paris")) {
+    return "Plaster of Paris (P.O.P): Refined gypsum powder used to craft seamless, insulated suspended ceilings and decorative overhead lighting coves.";
+  }
+  return undefined;
 };
 
 // Types for structural material estimates
@@ -77,6 +131,7 @@ export default function App() {
   const [steelUnit, setSteelUnit] = useState<"Length" | "KG" | "Tons">("Length");
   const [sandUnit, setSandUnit] = useState<"Tipper" | "Tons" | "Bags">("Tipper");
   const [lastSearchedQuery, setLastSearchedQuery] = useState("");
+  const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
 
   // Lead Form States
   const [leadName, setLeadName] = useState("");
@@ -661,10 +716,18 @@ export default function App() {
         })
       });
 
-      const data = await res.json();
+      const contentType = res.headers.get("content-type");
+      let data: any = null;
+
+      if (contentType && contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(text.substring(0, 100) || `Server returned HTML status ${res.status}`);
+      }
 
       if (!res.ok) {
-        throw new Error(data.error || "Registration failed. Please try again.");
+        throw new Error(data?.error || "Registration failed. Please try again.");
       }
 
       if (data?.success) {
@@ -695,10 +758,18 @@ export default function App() {
         })
       });
 
-      const data = await res.json();
+      const contentType = res.headers.get("content-type");
+      let data: any = null;
+
+      if (contentType && contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        throw new Error(text.substring(0, 100) || `Server returned HTML status ${res.status}`);
+      }
 
       if (!res.ok) {
-        throw new Error(data.error || "Verification failed.");
+        throw new Error(data?.error || "Verification failed.");
       }
 
       if (data?.success && data?.user) {
@@ -1403,8 +1474,36 @@ export default function App() {
                         {estimate.substructure.map((item, idx) => (
                           <tr key={idx} className="hover:bg-neutral-50/50 transition-colors">
                             <td className="py-3 px-3 font-medium text-neutral-950">
-                              <div>{item.name}</div>
+                              <div className="flex items-center flex-wrap gap-1">
+                                <span>{item.name}</span>
+                                {(() => {
+                                  const explanation = getExplanationForMaterial(item.name);
+                                  if (!explanation) return null;
+                                  return (
+                                    <button
+                                      type="button"
+                                      className="p-0.5 rounded-full text-neutral-400 hover:text-neutral-600 focus:outline-none cursor-pointer transition-colors inline-flex items-center"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveTooltip(activeTooltip === item.name ? null : item.name);
+                                      }}
+                                      title="Click to learn what this is used for"
+                                    >
+                                      <HelpCircle className="h-3.5 w-3.5" />
+                                    </button>
+                                  );
+                                })()}
+                              </div>
                               <div className="text-[10px] text-neutral-400 font-light mt-0.5">{item.note}</div>
+                              {activeTooltip === item.name && (() => {
+                                const explanation = getExplanationForMaterial(item.name);
+                                return explanation ? (
+                                  <div className="mt-1.5 p-2 bg-neutral-50 border border-[#ae2424]/10 rounded-lg text-[11px] font-normal leading-relaxed text-neutral-600 max-w-md animate-fadeIn flex items-start gap-1.5">
+                                    <span className="text-[#ae2424] shrink-0 font-bold">💡</span>
+                                    <span>{explanation}</span>
+                                  </div>
+                                ) : null;
+                              })()}
                             </td>
                             <td className="py-3 px-3 font-semibold font-mono">{item.quantity.toLocaleString()}</td>
                             <td className="py-3 px-3 text-neutral-500">{item.unit}</td>
@@ -1444,8 +1543,36 @@ export default function App() {
                         {estimate.wallingRoofing.map((item, idx) => (
                           <tr key={idx} className="hover:bg-neutral-50/50 transition-colors">
                             <td className="py-3 px-3 font-medium text-neutral-950">
-                              <div>{item.name}</div>
+                              <div className="flex items-center flex-wrap gap-1">
+                                <span>{item.name}</span>
+                                {(() => {
+                                  const explanation = getExplanationForMaterial(item.name);
+                                  if (!explanation) return null;
+                                  return (
+                                    <button
+                                      type="button"
+                                      className="p-0.5 rounded-full text-neutral-400 hover:text-neutral-600 focus:outline-none cursor-pointer transition-colors inline-flex items-center"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveTooltip(activeTooltip === item.name ? null : item.name);
+                                      }}
+                                      title="Click to learn what this is used for"
+                                    >
+                                      <HelpCircle className="h-3.5 w-3.5" />
+                                    </button>
+                                  );
+                                })()}
+                              </div>
                               <div className="text-[10px] text-neutral-400 font-light mt-0.5">{item.note}</div>
+                              {activeTooltip === item.name && (() => {
+                                const explanation = getExplanationForMaterial(item.name);
+                                return explanation ? (
+                                  <div className="mt-1.5 p-2 bg-neutral-50 border border-[#ae2424]/10 rounded-lg text-[11px] font-normal leading-relaxed text-neutral-600 max-w-md animate-fadeIn flex items-start gap-1.5">
+                                    <span className="text-[#ae2424] shrink-0 font-bold">💡</span>
+                                    <span>{explanation}</span>
+                                  </div>
+                                ) : null;
+                              })()}
                             </td>
                             <td className="py-3 px-3 font-semibold font-mono">{item.quantity.toLocaleString()}</td>
                             <td className="py-3 px-3 text-neutral-500">{item.unit}</td>
@@ -1485,8 +1612,36 @@ export default function App() {
                         {estimate.finishes.map((item, idx) => (
                           <tr key={idx} className="hover:bg-neutral-50/50 transition-colors">
                             <td className="py-3 px-3 font-medium text-neutral-950">
-                              <div>{item.name}</div>
+                              <div className="flex items-center flex-wrap gap-1">
+                                <span>{item.name}</span>
+                                {(() => {
+                                  const explanation = getExplanationForMaterial(item.name);
+                                  if (!explanation) return null;
+                                  return (
+                                    <button
+                                      type="button"
+                                      className="p-0.5 rounded-full text-neutral-400 hover:text-neutral-600 focus:outline-none cursor-pointer transition-colors inline-flex items-center"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setActiveTooltip(activeTooltip === item.name ? null : item.name);
+                                      }}
+                                      title="Click to learn what this is used for"
+                                    >
+                                      <HelpCircle className="h-3.5 w-3.5" />
+                                    </button>
+                                  );
+                                })()}
+                              </div>
                               <div className="text-[10px] text-neutral-400 font-light mt-0.5">{item.note}</div>
+                              {activeTooltip === item.name && (() => {
+                                const explanation = getExplanationForMaterial(item.name);
+                                return explanation ? (
+                                  <div className="mt-1.5 p-2 bg-neutral-50 border border-[#ae2424]/10 rounded-lg text-[11px] font-normal leading-relaxed text-neutral-600 max-w-md animate-fadeIn flex items-start gap-1.5">
+                                    <span className="text-[#ae2424] shrink-0 font-bold">💡</span>
+                                    <span>{explanation}</span>
+                                  </div>
+                                ) : null;
+                              })()}
                             </td>
                             <td className="py-3 px-3 font-semibold font-mono">{item.quantity.toLocaleString()}</td>
                             <td className="py-3 px-3 text-neutral-500">{item.unit}</td>

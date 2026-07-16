@@ -31,6 +31,47 @@ const PRICES = {
   brick: 850             // Red facing clay bricks
 };
 
+const getExplanationForMaterial = (name: string): string | undefined => {
+  const lowerName = name.toLowerCase();
+  if (lowerName.includes("cement") && (lowerName.includes("42.5r") || lowerName.includes("dangote"))) {
+    return "Grade 42.5R Cement: High-grade cement designed for high early strength. Best suited for load-bearing structures like columns, beams, suspended slabs, and heavy foundations.";
+  }
+  if (lowerName.includes("cement") && (lowerName.includes("32.5n") || lowerName.includes("bua"))) {
+    return "Grade 32.5N Cement: Standard strength cement optimized for general block laying, plastering, rendering, and non-structural mortar joints.";
+  }
+  if (lowerName.includes("16mm") || lowerName.includes("16mm tmt")) {
+    return "16mm Rebars: Heavy thermo-mechanically treated (TMT) steel reinforcement bars. Used as the main structural steel core for load-bearing columns and beams.";
+  }
+  if (lowerName.includes("12mm") || lowerName.includes("12mm high-tension")) {
+    return "12mm Rebars: High-tension ribbed steel reinforcement bars, primarily used for floor slab mesh grids, lintels, and wrapping stirrup ties.";
+  }
+  if (lowerName.includes("sharp clean sand") || lowerName.includes("sharp sand") || lowerName.includes("coarse sand")) {
+    return "Sharp Sand: Coarse aggregates free of organic silt/clay, absolutely critical for high-strength concrete mixes. Bad sand triggers weak concrete.";
+  }
+  if (lowerName.includes("plastering sand")) {
+    return "Plastering Sand: Fine-screened, clay-free soft sand optimized for a crack-free smooth cement render finish on walls.";
+  }
+  if (lowerName.includes("granite")) {
+    return "Crushed Granite: Extremely hard coarse aggregate stones (typically 3/4 inch). They provide the fundamental bulk compression load capacity inside concrete.";
+  }
+  if (lowerName.includes("membrane") || lowerName.includes("nylon")) {
+    return "Anti-Moisture Membrane: A thick, heavy-duty damp-proof course (DPC) nylon barrier laid before concrete pouring to block capillary ground water rise.";
+  }
+  if (lowerName.includes("block") || lowerName.includes("hollow masonry") || lowerName.includes("9-inch") || lowerName.includes("6-inch")) {
+    return "Hollow Blocks: Machine-vibrated concrete walling blocks. Vibration compacts the mix to guarantee high structural load capacity.";
+  }
+  if (lowerName.includes("roofing") || lowerName.includes("aluminum")) {
+    return "0.55mm Roofing Sheets: Premium, thick rust-resistant aluminum cladding sheets. Standard 0.55mm thickness avoids sagging and ensures weather endurance.";
+  }
+  if (lowerName.includes("timber") || lowerName.includes("rafter")) {
+    return "Hardwood Timber: Treated local hardwood (e.g. mahogany or opepe) for roof framing. Resists termite attacks, warping, and bending under high roof loads.";
+  }
+  if (lowerName.includes("tiles")) {
+    return "Vitrified Tiles: Extremely low-porosity glazed tiles baked at very high temperatures. Fully water-impermeable, stain-proof, and highly scratch-resistant.";
+  }
+  return undefined;
+};
+
 interface StepConfig {
   number: number;
   title: string;
@@ -44,6 +85,7 @@ export function QuantityCalculator() {
   const [isCalculated, setIsCalculated] = useState<boolean>(false);
   const [calculationResult, setCalculationResult] = useState<any>(null);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
 
   // Form selections matching progressive disclosure model
   const [projectType, setProjectType] = useState<string>("duplex");
@@ -972,14 +1014,41 @@ export function QuantityCalculator() {
                         className="bg-white rounded-2xl border border-stone-200/75 p-5 shadow-xs flex flex-col md:flex-row md:items-start justify-between gap-4 hover:border-stone-300 transition-all font-sans"
                       >
                         <div className="space-y-1.5 flex-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center flex-wrap gap-1.5">
                             <span className="text-emerald-600 bg-emerald-50 h-5 w-5 rounded-full flex items-center justify-center shrink-0">✓</span>
                             <h4 className="text-sm font-bold text-slate-800">{est.materialName}</h4>
+                            {(() => {
+                              const explanation = getExplanationForMaterial(est.materialName);
+                              if (!explanation) return null;
+                              return (
+                                <button
+                                  type="button"
+                                  className="p-0.5 rounded-full text-neutral-400 hover:text-neutral-600 focus:outline-none cursor-pointer transition-colors inline-flex items-center"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveTooltip(activeTooltip === est.materialName ? null : est.materialName);
+                                  }}
+                                  title="Click to learn what this is used for"
+                                >
+                                  <HelpCircle className="h-3.5 w-3.5" />
+                                </button>
+                              );
+                            })()}
                           </div>
                           
                           <p className="text-xs text-stone-500 leading-normal pl-7 pr-4">
                             {est.explanation}
                           </p>
+
+                          {activeTooltip === est.materialName && (() => {
+                            const explanation = getExplanationForMaterial(est.materialName);
+                            return explanation ? (
+                              <div className="ml-7 mt-1.5 p-2 bg-neutral-50 border border-[#ae2424]/15 rounded-lg text-[11px] font-normal leading-relaxed text-neutral-600 max-w-md animate-fadeIn flex items-start gap-1.5">
+                                <span className="text-[#ae2424] shrink-0 font-bold">💡</span>
+                                <span>{explanation}</span>
+                              </div>
+                            ) : null;
+                          })()}
 
                           {/* Resource allocations visual loading line */}
                           <div className="pl-7 pt-2 flex items-center gap-4.5">
