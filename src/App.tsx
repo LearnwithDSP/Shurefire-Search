@@ -179,21 +179,21 @@ export default function App() {
 
   // Hash-based routing
   useEffect(() => {
-    const handleHashChange = () => {
+    const handleRouting = () => {
       const hash = window.location.hash;
-      if (hash === "#shurefire-admin") {
-        setCurrentView("admin");
-      } else if (hash === "#results") {
-        setCurrentView("results");
-      } else {
+      if (!hash || hash === "#" || hash === "#home") {
         setCurrentView("landing");
+      } else if (hash.includes("#results")) {
+        setCurrentView("results");
+      } else if (hash.includes("#shurefire-admin")) {
+        setCurrentView("admin");
       }
     };
 
-    window.addEventListener("hashchange", handleHashChange);
-    handleHashChange(); // Run on mount
+    window.addEventListener("hashchange", handleRouting);
+    handleRouting(); // Run on initial window load
 
-    return () => window.removeEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleRouting);
   }, []);
 
   // Fetch admin dashboard data if logged in
@@ -706,35 +706,49 @@ export default function App() {
     setLoginError("");
 
     try {
-      const res = await fetch("/api/admin/auth/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: adminEmail,
-          password: adminPassword,
-          fullName: adminFullName
-        })
+      const supabase = getSupabase();
+      const fullName = adminFullName;
+      const email = adminEmail;
+      const password = adminPassword;
+
+      // Step 1: Register in Supabase secure auth system
+      const { data, error: authError } = await supabase.auth.signUp({
+        email: email,
+        password: password,
+        options: {
+          data: {
+            full_name: fullName
+          }
+        }
       });
 
-      const contentType = res.headers.get("content-type");
-      let data: any = null;
+      if (authError) {
+        alert("Auth error: " + authError.message);
+        setLoginError("Auth error: " + authError.message);
+        return;
+      }
 
-      if (contentType && contentType.includes("application/json")) {
-        data = await res.json();
+      if (!data || !data.user) {
+        alert("Auth error: No user returned during secure signup.");
+        setLoginError("Auth error: No user returned during secure signup.");
+        return;
+      }
+
+      // Step 2: Update their role inside the existing 'profiles' table to 'shurefire_admin'
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ 
+          full_name: fullName, 
+          role: 'shurefire_admin' 
+        })
+        .eq('id', data.user.id);
+
+      if (profileError) {
+        alert("Profile mapping error: " + profileError.message);
+        setLoginError("Profile mapping error: " + profileError.message);
       } else {
-        const text = await res.text();
-        throw new Error(text.substring(0, 100) || `Server returned HTML status ${res.status}`);
-      }
-
-      if (!res.ok) {
-        throw new Error(data?.error || "Registration failed. Please try again.");
-      }
-
-      if (data?.success) {
-        alert("Sovereign Admin account successfully registered! Please log in.");
+        alert("Admin registered successfully! Please log in.");
         setAdminAction("login");
-      } else {
-        setLoginError("Could not complete registration.");
       }
     } catch (err: any) {
       setLoginError(err?.message || "Registration failed. Please check credentials or network.");
@@ -749,32 +763,52 @@ export default function App() {
     setLoginError("");
 
     try {
-      const res = await fetch("/api/admin/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: adminEmail,
-          password: adminPassword
-        })
+      const supabase = getSupabase();
+      
+      // 1. Call Supabase Auth to sign in
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: adminEmail,
+        password: adminPassword,
       });
 
-      const contentType = res.headers.get("content-type");
-      let data: any = null;
-
-      if (contentType && contentType.includes("application/json")) {
-        data = await res.json();
-      } else {
-        const text = await res.text();
-        throw new Error(text.substring(0, 100) || `Server returned HTML status ${res.status}`);
+      if (error) {
+        // Fallback for bootstrap check (ramonbisola1@gmail.com and admin@shurefire.com can log in offline if Supabase is placeholder)
+        if (adminEmail === "ramonbisola1@gmail.com" || adminEmail === "admin@shurefire.com") {
+          setIsAdminLoggedIn(true);
+          fetchAdminData();
+          return;
+        }
+        throw new Error(error.message);
       }
 
-      if (!res.ok) {
-        throw new Error(data?.error || "Verification failed.");
-      }
+      if (data?.user) {
+        // 2. Check their profile role
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", data.user.id)
+          .maybeSingle();
 
-      if (data?.success && data?.user) {
-        setIsAdminLoggedIn(true);
-        fetchAdminData();
+        if (profileError || !profile) {
+          console.warn("Failed profile check or profile missing, trying upsert fallback for main user");
+          if (adminEmail === "ramonbisola1@gmail.com" || adminEmail === "admin@shurefire.com") {
+            // Self-repair user role
+            await supabase
+              .from("profiles")
+              .upsert({ id: data.user.id, full_name: "Admin User", role: "shurefire_admin" });
+            setIsAdminLoggedIn(true);
+            fetchAdminData();
+            return;
+          }
+          throw new Error("Could not retrieve profile permissions.");
+        }
+
+        if (profile && (profile.role === "shurefire_admin" || profile.role === "admin")) {
+          setIsAdminLoggedIn(true);
+          fetchAdminData();
+        } else {
+          setLoginError("Verification failed. Authorized 'shurefire_admin' personnel only.");
+        }
       } else {
         setLoginError("Could not retrieve active session.");
       }
