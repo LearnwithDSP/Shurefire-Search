@@ -16,7 +16,10 @@ import {
   AlertTriangle,
   Calculator,
   RefreshCw,
-  HelpCircle
+  HelpCircle,
+  Clock,
+  Trash2,
+  X
 } from "lucide-react";
 import { NIGERIAN_SUPPLIERS } from "./mockDatabase";
 import { getSupabase } from "./supabase";
@@ -148,6 +151,14 @@ const LOCAL_MOCK_KNOWLEDGE = [
 
 export default function App() {
   const [query, setQuery] = useState("");
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem("shurefire_recent_searches");
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
   const [currentView, setCurrentView] = useState<"landing" | "results" | "admin">("landing");
   const [isLoading, setIsLoading] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
@@ -678,6 +689,14 @@ export default function App() {
     setCurrentView("results");
     window.location.hash = "#results";
     setLastSearchedQuery(activeQuery);
+
+    // Save to recent searches history
+    setRecentSearches((prev) => {
+      const filtered = prev.filter(q => q.toLowerCase() !== activeQuery.trim().toLowerCase());
+      const updated = [activeQuery.trim(), ...filtered].slice(0, 10);
+      localStorage.setItem("shurefire_recent_searches", JSON.stringify(updated));
+      return updated;
+    });
     
     const startTime = Date.now();
 
@@ -776,7 +795,8 @@ export default function App() {
         body: JSON.stringify({
           query: activeQuery,
           region: "Lagos",
-          category: "all"
+          category: "all",
+          crawledBlocks: source === 'crawled' ? semanticResults : []
         })
       });
 
@@ -1315,6 +1335,58 @@ export default function App() {
                 </button>
               </div>
             </div>
+
+            {/* Recent Searches Section */}
+            {recentSearches.length > 0 && (
+              <div className="pt-6 flex flex-col items-center space-y-3 px-4 w-full max-w-xl select-none animate-fade-in">
+                <div className="flex items-center justify-between w-full border-b border-neutral-100 pb-1.5">
+                  <span className="text-[11px] font-bold text-neutral-400 uppercase tracking-widest font-mono flex items-center gap-1.5">
+                    <Clock className="h-3 w-3 text-neutral-400" />
+                    Recent Estimations:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRecentSearches([]);
+                      localStorage.removeItem("shurefire_recent_searches");
+                    }}
+                    className="text-[10px] font-semibold text-[#ae2424] hover:underline flex items-center gap-1 transition-all"
+                  >
+                    <Trash2 className="h-2.5 w-2.5" />
+                    Clear History
+                  </button>
+                </div>
+                <div className="flex flex-col gap-1.5 w-full">
+                  {recentSearches.map((term, index) => (
+                    <div
+                      key={index}
+                      className="group flex items-center justify-between bg-neutral-50/65 hover:bg-neutral-100/80 border border-neutral-150/60 rounded-xl px-3.5 py-2 transition-all duration-150 text-left cursor-pointer"
+                      onClick={() => handleSuggestionClick(term)}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <Clock className="h-3.5 w-3.5 text-neutral-400 shrink-0 group-hover:text-[#ae2424] transition-colors" />
+                        <span className="text-sm text-neutral-700 group-hover:text-neutral-900 transition-colors font-medium truncate">
+                          {term}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const updated = recentSearches.filter((_, i) => i !== index);
+                          setRecentSearches(updated);
+                          localStorage.setItem("shurefire_recent_searches", JSON.stringify(updated));
+                        }}
+                        className="text-neutral-400 hover:text-[#ae2424] hover:bg-neutral-200/50 p-1 rounded-full transition-all opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        title="Remove from history"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
           </main>
 

@@ -227,37 +227,74 @@ async function startServer() {
       // 1. Fetch live supplier stocks from the dynamic database (simulating API network lookups)
       const dbResult = queryLiveStockSuppliers(query, region as SupplyRegion, category as MaterialCategory);
 
-      // Fetch context from Supabase knowledge_base & Firestore knowledge_base
-      let kbTextContext = "";
-      try {
-        const supabase = getSupabase();
-        const { data: kbData, error: kbError } = await supabase
-          .from("knowledge_base")
-          .select("*");
-        if (kbData && kbData.length > 0 && !kbError) {
-          kbTextContext = kbData.map((b: any) => `KNOWLEDGE BLOCK:\n${b.content || b.block_content || ""}`).join("\n\n");
-          console.log(`[Shurefire Knowledge Base] Retrieved ${kbData.length} blocks from Supabase.`);
+      // Fetch/Resolve matching crawled knowledge blocks (Primary Source of Truth)
+      let crawledBlocks: any[] = req.body.crawledBlocks || [];
+      const searchQueryText = query || "";
+
+      if (!crawledBlocks || crawledBlocks.length === 0) {
+        let allKbBlocks: any[] = [];
+        try {
+          const supabase = getSupabase();
+          const { data: kbData, error: kbError } = await supabase
+            .from("knowledge_base")
+            .select("*");
+          if (kbData && kbData.length > 0 && !kbError) {
+            allKbBlocks = kbData.map((b: any) => ({
+              id: b.id,
+              title: b.title || "Trade Briefing",
+              content: b.content || b.content_text || b.block_content || ""
+            }));
+          }
+        } catch (err) {
+          console.log("[Shurefire Knowledge Base] Supabase fetch failed in server, trying Firestore...");
         }
-      } catch (err) {
-        console.log("[Shurefire Knowledge Base] Supabase knowledge base table query skipped or failed, trying Firestore fallback...");
+
+        if (allKbBlocks.length === 0) {
+          try {
+            const { getDocs, collection } = await import("firebase/firestore");
+            const snap = await getDocs(collection(db, "knowledge_base"));
+            if (!snap.empty) {
+              snap.forEach(doc => {
+                const d = doc.data();
+                allKbBlocks.push({
+                  id: doc.id,
+                  title: d.title || "Trade Briefing",
+                  content: d.content || d.content_text || ""
+                });
+              });
+            }
+          } catch (fsErr) {
+            console.error("[Shurefire Knowledge Base] Firestore fetch failed in server:", fsErr);
+          }
+        }
+
+        // Filter blocks that match user query terms
+        const queryTerms = searchQueryText.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+        if (queryTerms.length > 0 && allKbBlocks.length > 0) {
+          crawledBlocks = allKbBlocks.filter(b => {
+            const t = (b.title || "").toLowerCase();
+            const c = (b.content || "").toLowerCase();
+            return queryTerms.some(term => t.includes(term) || c.includes(term));
+          });
+        }
       }
 
-      if (!kbTextContext) {
-        try {
-          const { getDocs, collection } = await import("firebase/firestore");
-          const snap = await getDocs(collection(db, "knowledge_base"));
-          if (!snap.empty) {
-            const blocks: string[] = [];
-            snap.forEach(doc => {
-              const d = doc.data();
-              blocks.push(`KNOWLEDGE BLOCK:\n${d.content}`);
-            });
-            kbTextContext = blocks.join("\n\n");
-            console.log(`[Shurefire Knowledge Base] Retrieved ${snap.size} blocks from Firestore.`);
-          }
-        } catch (fsErr) {
-          console.error("[Shurefire Knowledge Base] Firestore knowledge base fallback failed:", fsErr);
-        }
+      let kbTextContext = "";
+      let hasMatchingContent = false;
+      const groundingSources: GroundingSource[] = [];
+
+      if (crawledBlocks && crawledBlocks.length > 0) {
+        hasMatchingContent = true;
+        kbTextContext = crawledBlocks.map((b: any) => `CRAWLED KNOWLEDGE BLOCK:\nTitle: ${b.title}\nContent: ${b.content}`).join("\n\n");
+        crawledBlocks.forEach((b: any) => {
+          groundingSources.push({
+            title: b.title,
+            uri: "knowledge_base/" + (b.id || "crawled")
+          });
+        });
+        console.log(`[Shurefire AI] Grounding calculations on ${crawledBlocks.length} crawled knowledge blocks.`);
+      } else {
+        console.log("[Shurefire AI] No matching crawled content found. Relying on locally saved information fallback.");
       }
 
       // Fallback generator in case Gemini is rate-limited or unavailable
@@ -351,19 +388,33 @@ Based on local surveyor guidelines in ${reg}, a typical project of this nature i
       // 2. Generate AI Brain grounding & analysis leveraging Gemini
       const ai = getGeminiClient();
       let payloadToCache: any = null;
-      let groundingSources: GroundingSource[] = [];
 
       const targetRegion = region || "Lagos";
       const targetCategory = category || "all";
-      const searchQueryText = query || "";
 
       if (ai) {
         try {
+          const LOCAL_SAVED_INFO = `LOCALLY SAVED INFORMATION (Sovereign Baseline & Standby Parameters):
+- Dangote Cement 50kg bag Lagos: ₦7,950 (Logistics: ₦400/bag)
+- BUA Supreme Cement 50kg bag: ₦7,800
+- 16mm TMT Steel Rebar (Length 12m): ₦13,800
+- 12mm High-Tension Steel Rebar (Length 12m): ₦8,300
+- Vibrated Hollow Block 9-inch: ₦780 each
+- Vibrated Hollow Block 6-inch: ₦650 each
+- Sharp Sand (20t Tipper): ₦135,000
+- Granite Stone (20t Tipper): ₦275,000
+- Premium Aluminum Roofing Sheets: ₦4,500/SQM
+- Hardwood Timber 2x4 Length: ₦1,800`;
+
           const systemContext = `You are Shurefire AI Quantity Surveyor & sovereign material analyst.
 Your job is to parse the user's search query for Project Type, Location, and Finish Level.
-You must synthesize the material estimate using ONLY the pricing and parameters retrieved from the following KNOWLEDGE BASE context:
 
-${kbTextContext || "Default Sovereign Baseline pricing:\n- Dangote Cement 50kg bag Lagos: ₦7,950 (Logistics: ₦400/bag)\n- BUA Supreme Cement 50kg bag: ₦7,800\n- 16mm TMT Steel Rebar (Length 12m): ₦13,800\n- 12mm High-Tension Steel Rebar (Length 12m): ₦8,300\n- Vibrated Hollow Block 9-inch: ₦780 each\n- Vibrated Hollow Block 6-inch: ₦650 each\n- Sharp Sand (20t Tipper): ₦135,000\n- Granite Stone (20t Tipper): ₦275,000\n- Premium Aluminum Roofing Sheets: ₦4,500/SQM\n- Hardwood Timber 2x4 Length: ₦1,800"}
+${hasMatchingContent ? `PRIMARY SOURCE OF TRUTH (CRAWLED KNOWLEDGE_BASE CONTENT):
+You must base your pricing, parameters, and structural specification ENTIRELY on these crawled matches:
+${kbTextContext}` : `NO MATCHING CRAWLED KNOWLEDGE CONTENT FOUND FOR THIS QUERY.
+Therefore, you MUST return to and rely on the following LOCALLY SAVED INFORMATION for your pricing calculations and answer provision:
+${LOCAL_SAVED_INFO}`
+}
 
 CRITICAL RULE: You are STRICTLY FORBIDDEN from mentioning external hubs or third-party depots (such as Jumia, Jiji, or retail outlets outside of Shurefire) unless explicitly written in the knowledge base. Always prioritize direct dispatch through the "Shurefire Sourcing Desk" on WhatsApp +2349023089987.
 
