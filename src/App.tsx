@@ -164,8 +164,13 @@ export default function App() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchSource, setSearchSource] = useState<'crawled' | 'fallback' | null>(null);
   const [searchStats, setSearchStats] = useState({ resultsCount: 0, duration: 0 });
-  const [activeTab, setActiveTab] = useState<"all" | "pricing" | "depots" | "guides">("all");
+  const [activeTab, setActiveTab] = useState<"all" | "pricing">("all");
+  const [expandedResultId, setExpandedResultId] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<StructuredEstimate | null>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [aiResponseText, setAiResponseText] = useState<string>("");
+  const [sourceCitations, setSourceCitations] = useState<any[]>([]);
+  const [isFallback, setIsFallback] = useState<boolean>(false);
   
   // Interactive Modal state
   const [showProcureModal, setShowProcureModal] = useState(false);
@@ -686,9 +691,13 @@ export default function App() {
     if (!activeQuery.trim()) return;
 
     setIsLoading(true);
+    setLoading(true);
     setCurrentView("results");
     window.location.hash = "#results";
     setLastSearchedQuery(activeQuery);
+    setAiResponseText("");
+    setSourceCitations([]);
+    setIsFallback(false);
 
     // Save to recent searches history
     setRecentSearches((prev) => {
@@ -700,48 +709,48 @@ export default function App() {
     
     const startTime = Date.now();
 
-    // --- HYBRID SEMANTIC SEARCH ENGINE (DUAL-LAYERED) ---
+    // --- HYBRID SEMANTIC SEARCH ENGINE (DUAL-LAYERED WITH GEMINI EMBEDDINGS) ---
+    const GEMINI_API_KEY = "your-gemini-api-key-here";
     let semanticResults: any[] = [];
     let source: 'crawled' | 'fallback' | null = null;
 
     try {
-      console.log("[Shurefire AI Router] Initiating hybrid semantic search for:", activeQuery);
+      console.log("[Shurefire AI Router] Initiating Gemini semantic search for:", activeQuery);
       
-      // 1. Get embedding from OpenAI API
-      const embeddingApiKey = "your-openai-api-key-here";
-      const embeddingRes = await fetch("https://api.openai.com/v1/embeddings", {
+      // Step 1: Generate Query Vector using Gemini Embedding Model
+      const embeddingRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${embeddingApiKey}`
+          "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          input: activeQuery,
-          model: "text-embedding-3-small"
+          model: "models/text-embedding-004",
+          content: {
+            parts: [{ text: activeQuery }]
+          }
         })
       });
 
       if (!embeddingRes.ok) {
-        throw new Error(`OpenAI Embeddings API returned status ${embeddingRes.status}`);
+        throw new Error(`Gemini Embedding API returned status ${embeddingRes.status}`);
       }
 
       const embeddingData = await embeddingRes.json();
-      const embedding = embeddingData?.data?.[0]?.embedding;
+      const extracted_vector = embeddingData?.embedding?.values;
 
-      if (!embedding || !Array.isArray(embedding)) {
+      if (!extracted_vector || !Array.isArray(extracted_vector)) {
         throw new Error("Invalid or empty embedding vector received");
       }
 
-      // 2. Query Supabase RPC 'match_knowledge'
-      // Use window.dbClient or frontend supabase fallback
-      const supabase = (window as any).dbClient || getFrontendSupabase();
-      if (!supabase) {
-        throw new Error("Supabase client is not available");
+      // Ensure window.dbClient is set up
+      if (!(window as any).dbClient) {
+        (window as any).dbClient = getFrontendSupabase();
       }
 
-      const { data: matchedRows, error: rpcError } = await supabase.rpc('match_knowledge', {
-        query_embedding: embedding,
-        match_threshold: 0.35,
+      // Step 2: Fetch Matching Crawled Content from Supabase
+      const { data: matchedRows, error: rpcError } = await (window as any).dbClient.rpc('match_knowledge', {
+        query_embedding: extracted_vector,
+        match_threshold: 0.30,
         match_count: 4
       });
 
@@ -759,15 +768,48 @@ export default function App() {
           isCrawled: true
         }));
         source = 'crawled';
+
+        // Step 3: Factual Answer Generation (RAG) using Gemini Flash - CASE A (CRAWLED DATA FOUND)
+        const contextText = semanticResults.map((b: any) => `Title: ${b.title}\nContent: ${b.content}`).join("\n\n");
+        const userQuery = activeQuery;
+
+        const generationRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: "You are Shurefire's Sovereign Materials Intelligence AI. You must answer the user's query professionally and authoritatively using ONLY the following verified source documentation context. Do not invent facts outside of this context.\n\n[CONTEXT]: " + contextText + "\n\n[USER QUERY]: " + userQuery
+              }]
+            }]
+          })
+        });
+
+        if (generationRes.ok) {
+          const genData = await generationRes.json();
+          const generatedText = genData?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (generatedText) {
+            setAiResponseText(generatedText);
+            setSourceCitations(semanticResults);
+            setIsFallback(false);
+          } else {
+            throw new Error("Empty text returned from Gemini Flash");
+          }
+        } else {
+          throw new Error(`Gemini Flash API returned status ${generationRes.status}`);
+        }
+
       } else {
         console.log("[Shurefire AI Router] No semantic matches above threshold. Invoking local fallback.");
         throw new Error("Empty matches returned from vector database");
       }
 
     } catch (err) {
-      console.warn("[Shurefire AI Router] Semantic Vector Search failed. Gracefully falling back to local mock briefings:", err);
+      console.warn("[Shurefire AI Router] Semantic Vector Search/Generation failed. Swapping to standard fallback:", err);
       
-      // CASE B: Fallback triggered - filter predefined local mock database matching keyword
+      // CASE B (NO MATCHES FOUND): bypass Gemini entirely and smoothly filter your local fallback dataset
       const queryTerms = activeQuery.toLowerCase().split(/\s+/).filter(Boolean);
       const fallbackMatches = LOCAL_MOCK_KNOWLEDGE.filter(item => {
         return queryTerms.some(term => 
@@ -782,6 +824,10 @@ export default function App() {
         similarity: 0.75 - (idx * 0.05) // synthetic similarity score for design completeness
       }));
       source = 'fallback';
+
+      setAiResponseText("No custom intelligence matches found. Showing standard directory fallback.");
+      setSourceCitations([]);
+      setIsFallback(true);
     }
 
     setSearchResults(semanticResults);
@@ -827,6 +873,7 @@ export default function App() {
       });
     } finally {
       setIsLoading(false);
+      setLoading(false);
     }
   };
 
@@ -1483,7 +1530,7 @@ export default function App() {
                     activeTab === "all" ? "border-[#ae2424] text-[#ae2424] font-semibold" : "border-transparent hover:text-neutral-800"
                   }`}
                 >
-                  All Estimates
+                  All Results
                 </button>
                 <button 
                   onClick={() => setActiveTab("pricing")}
@@ -1491,23 +1538,7 @@ export default function App() {
                     activeTab === "pricing" ? "border-[#ae2424] text-[#ae2424] font-semibold" : "border-transparent hover:text-neutral-800"
                   }`}
                 >
-                  Sovereign Spot Pricing
-                </button>
-                <button 
-                  onClick={() => setActiveTab("depots")}
-                  className={`pb-2.5 px-1 border-b-2 transition-all cursor-pointer ${
-                    activeTab === "depots" ? "border-[#ae2424] text-[#ae2424] font-semibold" : "border-transparent hover:text-neutral-800"
-                  }`}
-                >
-                  Active Sourcing Depots
-                </button>
-                <button 
-                  onClick={() => setActiveTab("guides")}
-                  className={`pb-2.5 px-1 border-b-2 transition-all cursor-pointer ${
-                    activeTab === "guides" ? "border-[#ae2424] text-[#ae2424] font-semibold" : "border-transparent hover:text-neutral-800"
-                  }`}
-                >
-                  Structural Standards (SON)
+                  Estimates
                 </button>
               </div>
             </div>
@@ -1540,7 +1571,7 @@ export default function App() {
                   <div className="bg-neutral-50/70 border border-neutral-200/60 rounded-xl p-5 space-y-4">
                     <div className="flex items-center gap-2">
                       <div className="w-3.5 h-3.5 bg-[#ae2424]/30 rounded-full animate-ping"></div>
-                      <div className="h-3.5 bg-neutral-300 rounded w-48"></div>
+                      <span className="text-sm font-semibold text-neutral-600 animate-pulse">Searching sovereign materials database...</span>
                     </div>
                     <div className="space-y-2.5">
                       <div className="h-4 bg-neutral-200 rounded w-full"></div>
@@ -1709,7 +1740,7 @@ export default function App() {
                     </p>
                     <div className="text-xs text-neutral-500 leading-relaxed pt-1 flex flex-col sm:flex-row sm:items-center gap-2">
                       <span className="font-semibold text-neutral-700">Standards Reference:</span>
-                      <span>Standard Organisation of Nigeria (SON) Civil Construction and Blockmaking Guidelines</span>
+                      <span>Civil Construction and Blockmaking Guidelines</span>
                     </div>
                   </div>
                 </div>
@@ -1798,104 +1829,192 @@ export default function App() {
               )}
 
               {/* --- DYNAMIC HYBRID SEMANTIC SEARCH RESULTS --- */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between border-b border-neutral-100 pb-2 select-none">
-                  <h3 className="text-sm font-black text-slate-900 tracking-tight flex items-center gap-2">
-                    <span className="flex h-2 w-2 relative">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#ae2424] opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-[#ae2424]"></span>
+              {activeTab === "all" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between border-b border-neutral-100 pb-2 select-none">
+                    <h3 className="text-sm font-black text-slate-900 tracking-tight flex items-center gap-2">
+                      <span className="flex h-2 w-2 relative">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#ae2424] opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-[#ae2424]"></span>
+                      </span>
+                      Sovereign Intelligence Match
+                    </h3>
+                    
+                    {/* Meta Metrics Bar */}
+                    <span className="text-xs text-slate-500 font-medium">
+                      {searchSource === 'crawled' 
+                        ? `Found ${searchResults.length} verified intelligence matches` 
+                        : `Showing ${searchResults.length} standard factory listings`}
                     </span>
-                    Sovereign Intelligence Match
-                  </h3>
-                  
-                  {/* Meta Metrics Bar */}
-                  <span className="text-xs text-slate-500 font-medium">
-                    {searchSource === 'crawled' 
-                      ? `Found ${searchResults.length} verified intelligence matches` 
-                      : `Showing ${searchResults.length} standard factory listings`}
-                  </span>
-                </div>
+                  </div>
 
-                <div className="space-y-6">
-                  {searchResults.map((result, idx) => (
-                    <div 
-                      key={result.id || idx} 
-                      className="bg-white border border-neutral-200/90 hover:border-neutral-300 rounded-2xl p-5 shadow-3xs transition-all relative overflow-hidden select-text"
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutral-50 pb-2.5">
-                        {/* Top Row: Document Title / Material Class */}
-                        <h4 className="text-xl font-semibold text-slate-900 line-clamp-1 hover:text-blue-600 transition-colors cursor-pointer">
-                          {result.title}
-                        </h4>
+                  <div className="space-y-6">
+                    {searchResults.map((result, idx) => {
+                      const resultKey = result.id || String(idx);
+                      const isExpanded = expandedResultId === resultKey;
+                      return (
+                        <div 
+                          id={`doc-${resultKey}`}
+                          key={resultKey} 
+                          className={`bg-white border ${isExpanded ? 'border-blue-400 ring-1 ring-blue-400/20' : 'border-neutral-200/90 hover:border-neutral-300'} rounded-2xl p-5 shadow-3xs transition-all relative overflow-hidden select-text cursor-pointer`}
+                          onClick={() => setExpandedResultId(isExpanded ? null : resultKey)}
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutral-50 pb-2.5">
+                            {/* Top Row: Document Title / Material Class */}
+                            <h4 className="text-xl font-semibold text-slate-900 hover:text-blue-600 transition-colors">
+                              {result.title}
+                            </h4>
 
-                        <div className="flex items-center gap-2 shrink-0">
-                          {/* Badge System */}
-                          {result.isCrawled ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 bg-emerald-50 border border-emerald-150 rounded-full text-xs font-bold text-emerald-700 select-none">
-                              [Verified Crawl]
-                            </span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {/* Badge System */}
+                              {result.isCrawled ? (
+                                <span className="inline-flex items-center px-2.5 py-0.5 bg-emerald-50 border border-emerald-150 rounded-full text-xs font-bold text-emerald-700 select-none">
+                                  [Verified Crawl]
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2.5 py-0.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600 select-none">
+                                  [Factory Direct]
+                                </span>
+                              )}
+
+                              {/* Relevance/Similarity Score */}
+                              {result.isCrawled && result.similarity && (
+                                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full select-none">
+                                  {Math.round(result.similarity * 100)}% Match Context
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Excerpt Snippet or Full Text */}
+                          {isExpanded ? (
+                            <div 
+                              className="prose max-h-96 overflow-y-auto mt-4 pt-4 border-t border-slate-200 text-slate-700 text-sm leading-relaxed whitespace-pre-wrap select-text"
+                              onClick={(e) => e.stopPropagation() /* Prevent collapse when highlighting text */}
+                            >
+                              {result.content}
+                              <button
+                                type="button"
+                                className="mt-4 text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 transition-colors text-xs select-none"
+                                onClick={() => setExpandedResultId(null)}
+                              >
+                                Click to collapse text ↑
+                              </button>
+                            </div>
                           ) : (
-                            <span className="inline-flex items-center px-2.5 py-0.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600 select-none">
-                              [Factory Direct]
-                            </span>
-                          )}
-
-                          {/* Relevance/Similarity Score */}
-                          {result.isCrawled && result.similarity && (
-                            <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full select-none">
-                              {Math.round(result.similarity * 100)}% Match Context
-                            </span>
+                            <div className="mt-2.5 space-y-1.5">
+                              <p className="text-sm text-slate-600 line-clamp-3 leading-relaxed">
+                                {result.content}
+                              </p>
+                              <div className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors pt-1">
+                                Click to read full intelligence text →
+                              </div>
+                            </div>
                           )}
                         </div>
+                      );
+                    })}
+
+                    {searchResults.length === 0 && (
+                      <div className="bg-neutral-50 rounded-2xl p-6 text-center text-slate-400 text-xs">
+                        No material intelligence records matched your active query. Try searching for specific material types (cement, steel, blocks).
                       </div>
-
-                      {/* Excerpt Snippet */}
-                      <p className="text-sm text-slate-600 line-clamp-3 leading-relaxed mt-2">
-                        {result.content}
-                      </p>
-                    </div>
-                  ))}
-
-                  {searchResults.length === 0 && (
-                    <div className="bg-neutral-50 rounded-2xl p-6 text-center text-slate-400 text-xs">
-                      No material intelligence records matched your active query. Try searching for specific material types (cement, steel, blocks).
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
               {/* ------------------------------------------------ */}
 
               {/* [AI SMART RESPONSE / SUMMARIZED ESTIMATE CARD] */}
-              <div className="bg-neutral-50/70 border border-neutral-200/60 rounded-xl p-5 space-y-3.5">
-                <div className="flex items-center gap-1.5 select-none">
-                  <svg className="w-4 h-4 text-[#ae2424] animate-pulse" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 21l-.813-5.096L3 15l5.096-.813L9 9l.813 5.096L15 15l-5.096.813Z" />
-                  </svg>
-                  <span className="text-[11px] font-bold text-[#ae2424] tracking-widest font-mono uppercase">Gemini AI Sourcing Evaluation</span>
+              {aiResponseText ? (
+                <div className={`bg-slate-50 border ${isFallback ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200'} rounded-xl p-6 space-y-4`}>
+                  <div className="flex items-center justify-between select-none">
+                    <div className="flex items-center gap-2">
+                      {isFallback ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-amber-100 border border-amber-200 text-amber-800 animate-fade-in">
+                          [Standard Directory Fallback]
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 border border-emerald-200 text-emerald-700 animate-fade-in">
+                          [Verified Custom Intelligence Matrix]
+                        </span>
+                      )}
+                    </div>
+                    
+                    {!isFallback && (
+                      <span className="text-[10px] bg-emerald-100/50 text-emerald-800 px-2 py-0.5 rounded font-mono font-bold animate-pulse">
+                        RAG Active
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="text-slate-800 leading-relaxed text-base prose select-text whitespace-pre-wrap">
+                    {aiResponseText}
+                  </div>
+
+                  {/* Citations Section */}
+                  {!isFallback && sourceCitations && sourceCitations.length > 0 && (
+                    <div className="pt-3 border-t border-slate-200/60 flex flex-col gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono">
+                        Sources Used:
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {sourceCitations.map((doc, dIdx) => (
+                          <a
+                            key={doc.id || dIdx}
+                            href={`#doc-${doc.id || dIdx}`}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              const el = document.getElementById(`doc-${doc.id || dIdx}`);
+                              if (el) {
+                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                el.classList.add('ring-2', 'ring-emerald-400', 'transition-all');
+                                setTimeout(() => {
+                                  el.classList.remove('ring-2', 'ring-emerald-400');
+                                }, 2000);
+                              }
+                            }}
+                            className="inline-flex items-center text-xs font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100/80 px-2.5 py-1 rounded-lg border border-emerald-150 transition-all cursor-pointer"
+                          >
+                            📄 {doc.title}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                
-                <p className="text-[14px] text-neutral-700 leading-relaxed">
-                  The computed estimate focuses on a <span className="font-bold text-neutral-800">{estimate.projectTitle}</span> layout. 
-                  {estimate.isSwampy ? (
-                    <span className="text-neutral-700 block mt-2">
-                      ⚠️ <strong className="text-neutral-800">Swampy Terrain Warning:</strong> Sourcing is adjusted for Lekki peninsula soils. Substructure concrete and reinforcement demands have been scaled upward by **35%** to support a rigid raft foundation beam configuration, adding waterproof membranes and extra Grade 42.5R cement.
-                    </span>
-                  ) : (
-                    " Quantities assume standard dry-soil excavation footing depth of 1.2 meters."
-                  )}
-                  {estimate.isPremium ? (
-                    <span className="block mt-2">
-                      ⭐ <strong className="text-neutral-800">Premium Finishes:</strong> Cost calculations utilize elite glazed floor tiles and royal hardwood doors, optimizing long-term visual luxury and resistance to sea-air salinity.
-                    </span>
-                  ) : estimate.isBasic ? (
-                    <span className="block mt-2">
-                      📉 <strong className="text-neutral-800">Budget Finishes:</strong> Interior finishes are optimized for rapid cost-saving, utilizing highly durable standard matte tiles and HDF Flush doors.
-                    </span>
-                  ) : (
-                    " Finishing items are scaled according to standard professional tenant specs."
-                  )}
-                </p>
-              </div>
+              ) : (
+                <div className="bg-neutral-50/70 border border-neutral-200/60 rounded-xl p-5 space-y-3.5">
+                  <div className="flex items-center gap-1.5 select-none">
+                    <svg className="w-4 h-4 text-[#ae2424] animate-pulse" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 21l-.813-5.096L3 15l5.096-.813L9 9l.813 5.096L15 15l-5.096.813Z" />
+                    </svg>
+                    <span className="text-[11px] font-bold text-[#ae2424] tracking-widest font-mono uppercase">Gemini AI Sourcing Evaluation</span>
+                  </div>
+                  
+                  <p className="text-[14px] text-neutral-700 leading-relaxed">
+                    The computed estimate focuses on a <span className="font-bold text-neutral-800">{estimate.projectTitle}</span> layout. 
+                    {estimate.isSwampy ? (
+                      <span className="text-neutral-700 block mt-2">
+                        ⚠️ <strong className="text-neutral-800">Swampy Terrain Warning:</strong> Sourcing is adjusted for Lekki peninsula soils. Substructure concrete and reinforcement demands have been scaled upward by **35%** to support a rigid raft foundation beam configuration, adding waterproof membranes and extra Grade 42.5R cement.
+                      </span>
+                    ) : (
+                      " Quantities assume standard dry-soil excavation footing depth of 1.2 meters."
+                    )}
+                    {estimate.isPremium ? (
+                      <span className="block mt-2">
+                        ⭐ <strong className="text-neutral-800">Premium Finishes:</strong> Cost calculations utilize elite glazed floor tiles and royal hardwood doors, optimizing long-term visual luxury and resistance to sea-air salinity.
+                      </span>
+                    ) : estimate.isBasic ? (
+                      <span className="block mt-2">
+                        📉 <strong className="text-neutral-800">Budget Finishes:</strong> Interior finishes are optimized for rapid cost-saving, utilizing highly durable standard matte tiles and HDF Flush doors.
+                      </span>
+                    ) : (
+                      " Finishing items are scaled according to standard professional tenant specs."
+                    )}
+                  </p>
+                </div>
+              )}
 
               {/* [STRUCTURED ESTIMATE TABLES BY SECTIONS] */}
               <div className="space-y-7.5">
