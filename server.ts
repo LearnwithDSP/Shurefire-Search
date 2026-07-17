@@ -217,12 +217,7 @@ async function startServer() {
 
       if (loadedFromCache && cachedData) {
         res.json({
-          answer: cachedData.answer || "",
-          featuredAnswer: cachedData.featuredAnswer || cachedData.answer || "",
-          searchResults: cachedData.searchResults || [],
-          groundingSources: cachedData.groundingSources || [],
-          simulatedApiLogs: cachedData.apiLogs || [],
-          localMaterials: cachedData.materials || [],
+          ...cachedData,
           isCached: true,
           cachedAt: cachedData.lastUpdated
         });
@@ -493,6 +488,7 @@ Generate the complete structured JSON response matching the schema. In the "sear
             query: queryStr,
             region: targetRegion,
             category: targetCategory,
+            groundingSources: groundingSources || [],
             lastUpdated: new Date().toISOString()
           };
 
@@ -511,10 +507,24 @@ Generate the complete structured JSON response matching the schema. In the "sear
 
         } catch (gemIniErr: any) {
           console.warn(`[Shorefire AI] Search content generation activated rich fallback. (Reason: Gemini response currently rate-limited or key quota exceeded).`, gemIniErr);
-          payloadToCache = getFallbackResults(searchQueryText, targetRegion);
+          payloadToCache = {
+            ...getFallbackResults(searchQueryText, targetRegion),
+            queryKey: cacheId,
+            query: queryStr,
+            region: targetRegion,
+            category: targetCategory,
+            lastUpdated: new Date().toISOString()
+          };
         }
       } else {
-        payloadToCache = getFallbackResults(searchQueryText, targetRegion);
+        payloadToCache = {
+          ...getFallbackResults(searchQueryText, targetRegion),
+          queryKey: cacheId,
+          query: queryStr,
+          region: targetRegion,
+          category: targetCategory,
+          lastUpdated: new Date().toISOString()
+        };
       }
 
       // Sync and Write-through Caching: Save search results and corresponding estimates to Firestore & Supabase
