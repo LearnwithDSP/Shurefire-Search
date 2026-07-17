@@ -710,14 +710,18 @@ export default function App() {
     const startTime = Date.now();
 
     // --- HYBRID SEMANTIC SEARCH ENGINE (DUAL-LAYERED WITH GEMINI EMBEDDINGS) ---
-    const GEMINI_API_KEY = "your-gemini-api-key-here";
+    const GEMINI_API_KEY = "AIzaSyBfGIeS0tWFVRc3IygD-UUjhCh_COGJc1g";
     let semanticResults: any[] = [];
     let source: 'crawled' | 'fallback' | null = null;
 
     try {
       console.log("[Shurefire AI Router] Initiating Gemini semantic search for:", activeQuery);
       
-      // Step 1: Generate Query Vector using Gemini Embedding Model
+      // A. PRE-FILTER KEYWORD MAPS (Intent-Sensing Isolation)
+      const materialsKeywords = ["cement", "tmt", "steel", "reinforcement", "sand", "block", "aggregate"];
+      const activeKeywords = materialsKeywords.filter(kw => activeQuery.toLowerCase().includes(kw));
+
+      // B. ACCURATE GOOGLE GEMINI EMBEDDING INGESTION
       const userQuery = activeQuery;
       const embeddingRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2:embedContent?key=${GEMINI_API_KEY}`, {
         method: "POST",
@@ -727,8 +731,9 @@ export default function App() {
         body: JSON.stringify({
           model: "models/gemini-embedding-2",
           content: {
-            parts: [{ text: "Represent this query for retrieving relevant materials engineering documentation: " + userQuery }]
-          }
+            parts: [{ text: userQuery }]
+          },
+          taskType: "RETRIEVAL_QUERY"
         })
       });
 
@@ -740,6 +745,7 @@ export default function App() {
       const extracted_vector = embeddingData?.embedding?.values;
 
       if (!extracted_vector || !Array.isArray(extracted_vector)) {
+        console.error("[Shurefire AI Router] Severe warning: Invalid or empty embedding vector received!");
         throw new Error("Invalid or empty embedding vector received");
       }
 
@@ -748,20 +754,40 @@ export default function App() {
         (window as any).dbClient = getFrontendSupabase();
       }
 
-      // Step 2: Fetch Matching Crawled Content from Supabase
+      // C. DEEP VECTOR MATCHING & STRICT SCANNING
       const { data: matchedRows, error: rpcError } = await (window as any).dbClient.rpc('match_knowledge', {
         query_embedding: extracted_vector,
-        match_threshold: 0.30,
-        match_count: 4
+        match_threshold: 0.50, // Raise threshold to 0.50 to explicitly kill weak, lazy matches
+        match_count: 5
       });
 
       if (rpcError) {
         throw rpcError;
       }
 
-      if (matchedRows && matchedRows.length > 0) {
-        console.log("[Shurefire AI Router] Semantic match found in public.knowledge_base:", matchedRows);
-        semanticResults = matchedRows.map((row: any) => ({
+      // Client-side filtering/down-ranking based on pre-filter keyword maps
+      let processedRows = (matchedRows || []).map((row: any) => {
+        const titleLower = (row.title || "").toLowerCase();
+        const contentLower = (row.content_text || row.content || "").toLowerCase();
+        
+        let matchedKeyword = true;
+        if (activeKeywords.length > 0) {
+          matchedKeyword = activeKeywords.some(kw => titleLower.includes(kw) || contentLower.includes(kw));
+        }
+        
+        return {
+          ...row,
+          matchedKeyword,
+          similarity: matchedKeyword ? (row.similarity || 0.85) : ((row.similarity || 0.85) - 0.40)
+        };
+      });
+
+      // Sort by adjusted similarity descending
+      processedRows.sort((a: any, b: any) => b.similarity - a.similarity);
+
+      if (processedRows && processedRows.length > 0) {
+        console.log("[Shurefire AI Router] Semantic matches resolved in knowledge base:", processedRows);
+        semanticResults = processedRows.map((row: any) => ({
           id: row.id,
           title: row.title || "Trade Briefing",
           content: row.content_text || row.content || "",
@@ -770,9 +796,8 @@ export default function App() {
         }));
         source = 'crawled';
 
-        // Step 3: Factual Answer Generation (RAG) using Gemini Flash - CASE A (CRAWLED DATA FOUND)
-        const contextText = semanticResults.map((b: any) => `Title: ${b.title}\nContent: ${b.content}`).join("\n\n");
-        const userQuery = activeQuery;
+        // D. INTEGRATED ANSWER SYNTHESIS (RAG Phase)
+        const trustedContext = semanticResults.map((item: any) => `Title: ${item.title}\nContent: ${item.content}`).join("\n\n");
 
         const generationRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
           method: "POST",
@@ -782,7 +807,7 @@ export default function App() {
           body: JSON.stringify({
             contents: [{
               parts: [{
-                text: "You are Shurefire's Sovereign Materials Intelligence AI. You must answer the user's query professionally and authoritatively using ONLY the following verified source documentation context. Do not invent facts outside of this context.\n\n[CONTEXT]: " + contextText + "\n\n[USER QUERY]: " + userQuery
+                text: "You are Shurefire's Sovereign Materials Intelligence Engine. Answer the user query using ONLY the verified materials records provided below. If the records discuss a different material than what the user asked for, state clearly that no specific intelligence data matches the query. [RECORDS]: " + trustedContext + "\n\n[USER QUERY]: " + userQuery
               }]
             }]
           })
@@ -1857,30 +1882,32 @@ export default function App() {
                         <div 
                           id={`doc-${resultKey}`}
                           key={resultKey} 
-                          className={`bg-white border ${isExpanded ? 'border-blue-400 ring-1 ring-blue-400/20' : 'border-neutral-200/90 hover:border-neutral-300'} rounded-2xl p-5 shadow-3xs transition-all relative overflow-hidden select-text cursor-pointer`}
-                          onClick={() => setExpandedResultId(isExpanded ? null : resultKey)}
+                          className={`bg-white border ${isExpanded ? 'border-blue-400 ring-1 ring-blue-400/20 shadow-xs' : 'border-neutral-200/90 hover:border-neutral-300'} rounded-2xl p-5 shadow-3xs transition-all relative overflow-hidden select-text`}
                         >
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutral-50 pb-2.5">
-                            {/* Top Row: Document Title / Material Class */}
-                            <h4 className="text-xl font-semibold text-slate-900 hover:text-blue-600 transition-colors">
+                            {/* Top Row: Document Title / Material Class (Click to expand) */}
+                            <h4 
+                              className="text-xl font-semibold text-slate-900 hover:text-blue-600 transition-colors cursor-pointer"
+                              onClick={() => setExpandedResultId(isExpanded ? null : resultKey)}
+                            >
                               {result.title}
                             </h4>
 
-                            <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex items-center gap-2 shrink-0 select-none">
                               {/* Badge System */}
                               {result.isCrawled ? (
-                                <span className="inline-flex items-center px-2.5 py-0.5 bg-emerald-50 border border-emerald-150 rounded-full text-xs font-bold text-emerald-700 select-none">
+                                <span className="inline-flex items-center px-2.5 py-0.5 bg-emerald-50 border border-emerald-150 rounded-full text-xs font-bold text-emerald-700">
                                   [Verified Crawl]
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center px-2.5 py-0.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600 select-none">
+                                <span className="inline-flex items-center px-2.5 py-0.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600">
                                   [Factory Direct]
                                 </span>
                               )}
 
                               {/* Relevance/Similarity Score */}
                               {result.isCrawled && result.similarity && (
-                                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full select-none">
+                                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
                                   {Math.round(result.similarity * 100)}% Match Context
                                 </span>
                               )}
@@ -1891,12 +1918,11 @@ export default function App() {
                           {isExpanded ? (
                             <div 
                               className="prose max-h-96 overflow-y-auto mt-4 pt-4 border-t border-slate-200 text-slate-700 text-sm leading-relaxed whitespace-pre-wrap select-text"
-                              onClick={(e) => e.stopPropagation() /* Prevent collapse when highlighting text */}
                             >
                               {result.content}
                               <button
                                 type="button"
-                                className="mt-4 text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 transition-colors text-xs select-none"
+                                className="mt-4 text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 transition-colors text-xs select-none cursor-pointer"
                                 onClick={() => setExpandedResultId(null)}
                               >
                                 Click to collapse text ↑
@@ -1904,12 +1930,16 @@ export default function App() {
                             </div>
                           ) : (
                             <div className="mt-2.5 space-y-1.5">
-                              <p className="text-sm text-slate-600 line-clamp-3 leading-relaxed">
+                              <p className="text-sm text-slate-600 line-clamp-2 leading-relaxed">
                                 {result.content}
                               </p>
-                              <div className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors pt-1">
+                              <button
+                                type="button"
+                                className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors pt-1 cursor-pointer"
+                                onClick={() => setExpandedResultId(resultKey)}
+                              >
                                 Click to read full intelligence text →
-                              </div>
+                              </button>
                             </div>
                           )}
                         </div>
@@ -1928,7 +1958,7 @@ export default function App() {
 
               {/* [AI SMART RESPONSE / SUMMARIZED ESTIMATE CARD] */}
               {aiResponseText ? (
-                <div className={`bg-slate-50 border ${isFallback ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200'} rounded-xl p-6 space-y-4`}>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 shadow-sm space-y-4">
                   <div className="flex items-center justify-between select-none">
                     <div className="flex items-center gap-2">
                       {isFallback ? (

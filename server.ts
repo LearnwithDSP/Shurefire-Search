@@ -581,6 +581,13 @@ Generate the complete structured JSON response matching the schema. In the "sear
       // Sync and Write-through Caching: Save search results and corresponding estimates to Firestore & Supabase
       if (payloadToCache) {
         try {
+          // Log keys and types for troubleshooting security rule mismatches
+          const keys = Object.keys(payloadToCache);
+          console.log(`[Shorefire DB Cache Debug] Writing payload with ${keys.length} keys to cache ID: ${cacheId}`);
+          console.log(`[Shorefire DB Cache Debug] Keys present:`, JSON.stringify(keys));
+          const typeCheck = keys.map(k => `${k}: ${typeof payloadToCache[k]} (${Array.isArray(payloadToCache[k]) ? 'array' : ''})`);
+          console.log(`[Shorefire DB Cache Debug] Types:`, JSON.stringify(typeCheck));
+          
           // Write to Firestore search_cache
           await setDoc(doc(db, "search_cache", cacheId), payloadToCache);
           console.log(`[Shorefire DB Cache] Cached result in search_cache Firestore for: ${cacheId}`);
