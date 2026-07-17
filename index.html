@@ -53,7 +53,7 @@
             args[0] = rewrittenUrl;
           }
 
-          // Rule C: Force exact Auth Header Injection for the redirected request
+          // Rule C: Force exact Auth Header Injection *ONLY* for your Supabase project
           if (url.includes('ickghlgpkikwrelabayo.supabase.co')) {
             options.headers = options.headers || {};
             // If it's a Headers object, set it there; otherwise, treat it as a plain object
@@ -64,6 +64,27 @@
               options.headers['apikey'] = REAL_KEY;
               options.headers['Authorization'] = `Bearer ${REAL_KEY}`;
             }
+
+            // Clean up custom text IDs if the React bundle tries to send them to a UUID column
+            if (options.body && typeof options.body === 'string') {
+              try {
+                let payload = JSON.parse(options.body);
+                if (Array.isArray(payload)) {
+                  payload = payload.map(item => {
+                    if (item.id && typeof item.id === 'string' && item.id.startsWith('kb_')) {
+                      delete item.id; 
+                    }
+                    return item;
+                  });
+                } else if (payload.id && typeof payload.id === 'string' && payload.id.startsWith('kb_')) {
+                  delete payload.id;
+                }
+                options.body = JSON.stringify(payload);
+              } catch (e) {
+                console.warn("Could not parse payload body for ID cleanup:", e);
+              }
+            }
+
             args[1] = options;
           }
         }
