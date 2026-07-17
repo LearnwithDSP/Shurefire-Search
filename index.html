@@ -65,25 +65,40 @@
               options.headers['Authorization'] = `Bearer ${REAL_KEY}`;
             }
 
-            // Clean up custom text IDs if the React bundle tries to send them to a UUID column
+            // --- BULLETPROOF ID CLEANER ---
+            // If the React bundle sends an empty, null, undefined, or custom text 'kb_' ID, 
+            // we remove it so PostgreSQL fallback defaults can trigger.
             if (options.body && typeof options.body === 'string') {
               try {
                 let payload = JSON.parse(options.body);
-                if (Array.isArray(payload)) {
-                  payload = payload.map(item => {
-                    if (item.id && typeof item.id === 'string' && item.id.startsWith('kb_')) {
-                      delete item.id; 
+                
+                const cleanItem = (item) => {
+                  if (item && item.hasOwnProperty('id')) {
+                    const idVal = item.id;
+                    if (
+                      idVal === null || 
+                      idVal === undefined || 
+                      idVal === '' || 
+                      (typeof idVal === 'string' && idVal.startsWith('kb_'))
+                    ) {
+                      delete item.id;
                     }
-                    return item;
-                  });
-                } else if (payload.id && typeof payload.id === 'string' && payload.id.startsWith('kb_')) {
-                  delete payload.id;
+                  }
+                  return item;
+                };
+
+                if (Array.isArray(payload)) {
+                  payload = payload.map(cleanItem);
+                } else {
+                  payload = cleanItem(payload);
                 }
+                
                 options.body = JSON.stringify(payload);
               } catch (e) {
                 console.warn("Could not parse payload body for ID cleanup:", e);
               }
             }
+            // -------------------------------
 
             args[1] = options;
           }
