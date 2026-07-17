@@ -158,6 +158,27 @@ export default function App() {
   const [leadsSearchQuery, setLeadsSearchQuery] = useState("");
   const [supabaseConfig, setSupabaseConfig] = useState<{ url: string; key: string } | null>(null);
 
+  // URL Crawler / Link Importer States
+  const [knowledgeInputMode, setKnowledgeInputMode] = useState<"manual" | "crawler">("manual");
+  const [crawlUrl, setCrawlUrl] = useState("");
+  const [crawlStatus, setCrawlStatus] = useState<"idle" | "crawling" | "saving" | "success" | "error">("idle");
+  const [crawlMessage, setCrawlMessage] = useState("");
+
+  const getFrontendSupabase = () => {
+    const url = (window as any).SUPABASE_URL || (window as any).VITE_SUPABASE_URL || (import.meta as any).env.VITE_SUPABASE_URL || "https://ickghlgpkikwrelabayo.supabase.co";
+    const key = (window as any).SUPABASE_ANON_KEY || (window as any).VITE_SUPABASE_ANON_KEY || (import.meta as any).env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlja2dobGdwa2lrd3JlbGFiYXlvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMDM0MjgsImV4cCI6MjA5OTc3OTQyOH0.PdnGKbglH2Yc0tWjnlXEgjr53HN6L9lUals6I0G5Cvc";
+    return getSupabase(url.trim().replace(/^["']|["']$/g, ""), key.trim().replace(/^["']|["']$/g, ""));
+  };
+
+  const getDomainName = (urlStr: string) => {
+    try {
+      const url = new URL(urlStr);
+      return url.hostname.replace('www.', '');
+    } catch {
+      return urlStr;
+    }
+  };
+
   // Fetch Supabase configuration on mount to dynamic-initialize
   useEffect(() => {
     const fetchSupaConfig = async () => {
@@ -204,10 +225,34 @@ export default function App() {
         const leadsData = await leadsRes.json();
         setLeadsList(leadsData);
       }
-      const kbRes = await fetch("/api/admin/knowledge");
-      if (kbRes.ok) {
-        const kbData = await kbRes.json();
-        setKnowledgeBlocks(kbData);
+      
+      try {
+        const supabase = getFrontendSupabase();
+        const { data: kbData, error: kbError } = await supabase
+          .from("knowledge_base")
+          .select("*");
+        
+        if (!kbError && kbData) {
+          const mappedKb = kbData.map((b: any) => ({
+            id: b.id,
+            title: b.title || "Trade Briefing",
+            content_text: b.content_text || b.content || "",
+            content: b.content_text || b.content || "",
+            updatedAt: b.updated_at || b.created_at || b.createdAt,
+            createdAt: b.created_at || b.updated_at || b.createdAt
+          }));
+          mappedKb.sort((a, b) => new Date(b.updatedAt || 0).getTime() - new Date(a.updatedAt || 0).getTime());
+          setKnowledgeBlocks(mappedKb);
+        } else {
+          throw kbError || new Error("No data returned");
+        }
+      } catch (directErr) {
+        console.warn("Direct Supabase fetch failed, using backend fallback:", directErr);
+        const kbRes = await fetch("/api/admin/knowledge");
+        if (kbRes.ok) {
+          const kbData = await kbRes.json();
+          setKnowledgeBlocks(kbData);
+        }
       }
     } catch (err) {
       console.error("Failed to load admin dashboard records:", err);
@@ -831,25 +876,65 @@ export default function App() {
 
     setIsUploadingKnowledge(true);
     try {
-      const res = await fetch("/api/admin/knowledge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: editingKnowledgeId,
-          title: newKnowledgeTitle || "Trade Briefing",
-          content: newKnowledgeContent,
-          timestamp: new Date().toISOString()
-        })
-      });
+      const blockId = editingKnowledgeId || `kb_${Date.now()}`;
+      const payload = {
+        id: blockId,
+        title: newKnowledgeTitle || "Trade Briefing",
+        content_text: newKnowledgeContent.trim(),
+        content: newKnowledgeContent.trim(), // old schema fallback
+        updated_at: new Date().toISOString(),
+        created_at: new Date().toISOString()
+      };
 
-      if (res.ok) {
+      const supabase = getFrontendSupabase();
+      
+      let error = null;
+      if (editingKnowledgeId) {
+        const { error: updateError } = await supabase
+          .from("knowledge_base")
+          .update({
+            title: payload.title,
+            content_text: payload.content_text,
+            content: payload.content,
+            updated_at: payload.updated_at
+          })
+          .eq("id", editingKnowledgeId);
+        error = updateError;
+      } else {
+        const { error: insertError } = await supabase
+          .from("knowledge_base")
+          .insert([payload]);
+        error = insertError;
+      }
+
+      if (!error) {
         setNewKnowledgeContent("");
         setNewKnowledgeTitle("");
         setEditingKnowledgeId(null);
         fetchAdminData();
         alert(editingKnowledgeId ? "Knowledge block successfully updated & synchronized!" : "Sovereign rates briefing successfully uploaded & synchronized with the neural index!");
       } else {
-        alert("Failed to update sovereign brain.");
+        console.warn("Direct upload error, trying backend fallback:", error);
+        const res = await fetch("/api/admin/knowledge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: editingKnowledgeId,
+            title: newKnowledgeTitle || "Trade Briefing",
+            content: newKnowledgeContent,
+            timestamp: new Date().toISOString()
+          })
+        });
+
+        if (res.ok) {
+          setNewKnowledgeContent("");
+          setNewKnowledgeTitle("");
+          setEditingKnowledgeId(null);
+          fetchAdminData();
+          alert(editingKnowledgeId ? "Knowledge block successfully updated & synchronized!" : "Sovereign rates briefing successfully uploaded & synchronized with the neural index!");
+        } else {
+          alert("Failed to update sovereign brain.");
+        }
       }
     } catch (err) {
       console.error(err);
@@ -862,16 +947,103 @@ export default function App() {
   const handleDeleteKnowledge = async (id: string) => {
     if (!confirm("Are you sure you want to delete this knowledge block?")) return;
     try {
-      const res = await fetch(`/api/admin/knowledge/${id}`, {
-        method: "DELETE"
-      });
-      if (res.ok) {
+      const supabase = getFrontendSupabase();
+      const { error } = await supabase
+        .from("knowledge_base")
+        .delete()
+        .eq("id", id);
+      
+      if (!error) {
         fetchAdminData();
       } else {
-        alert("Failed to delete knowledge block");
+        console.warn("Direct delete failed, trying backend fallback:", error);
+        const res = await fetch(`/api/admin/knowledge/${id}`, {
+          method: "DELETE"
+        });
+        if (res.ok) {
+          fetchAdminData();
+        } else {
+          alert("Failed to delete knowledge block");
+        }
       }
     } catch (err) {
       console.error(err);
+      alert("Error deleting knowledge block");
+    }
+  };
+
+  const handleCrawlAndInject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!crawlUrl.trim()) return;
+
+    let targetUrl = crawlUrl.trim();
+    if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
+      targetUrl = "https://" + targetUrl;
+    }
+
+    setCrawlStatus("crawling");
+    setCrawlMessage("🕵️ Crawling website via Jina Reader...");
+
+    try {
+      const readerUrl = `https://r.jina.ai/${encodeURIComponent(targetUrl)}`;
+      const response = await fetch(readerUrl);
+      
+      if (!response.ok) {
+        throw new Error(`Jina Reader returned status ${response.status}`);
+      }
+
+      const text = await response.text();
+      if (!text || !text.trim()) {
+        throw new Error("No readable text content extracted from this URL.");
+      }
+
+      setCrawlStatus("saving");
+      setCrawlMessage("💾 Saving to database...");
+
+      const domain = getDomainName(targetUrl);
+      const dateStr = new Date().toLocaleDateString("en-NG", {
+        day: "numeric",
+        month: "short",
+        year: "numeric"
+      });
+
+      const title = `Crawl: ${domain} - ${dateStr}`;
+      const content = `SOURCE URL: ${targetUrl} \n\n=== CRAWLED CONTENT ===\n\n${text.trim()}`;
+
+      const blockId = `kb_crawl_${Date.now()}`;
+      const payload = {
+        id: blockId,
+        title,
+        content_text: content,
+        content: content, // old schema fallback
+        updated_at: new Date().toISOString(),
+        created_at: new Date().toISOString()
+      };
+
+      const supabase = getFrontendSupabase();
+      const { error: dbError } = await supabase
+        .from("knowledge_base")
+        .insert([payload]);
+
+      if (dbError) {
+        throw dbError;
+      }
+
+      setCrawlStatus("success");
+      setCrawlMessage("✅ Successfully injected!");
+      setCrawlUrl("");
+      
+      fetchAdminData();
+
+      setTimeout(() => {
+        setCrawlStatus("idle");
+        setCrawlMessage("");
+      }, 4000);
+
+    } catch (err: any) {
+      console.error("Crawl and inject error:", err);
+      setCrawlStatus("error");
+      setCrawlMessage(`❌ Error: ${err?.message || "Failed to crawl or save."}`);
     }
   };
 
@@ -2199,77 +2371,160 @@ export default function App() {
 
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-7">
                     
-                    {/* Left Column: Upload rates brief */}
+                    {/* Left Column: Upload rates brief / Web Crawler sub-tabs */}
                     <div className="lg:col-span-5 bg-white border border-neutral-200/90 rounded-2xl p-6 shadow-3xs space-y-4">
                       <div>
                         <h2 className="text-base font-black text-neutral-950 tracking-tight">
                           {editingKnowledgeId ? "Edit Sovereign Intelligence" : "Inject Terminal Intelligence"}
                         </h2>
                         <p className="text-[11px] text-neutral-500 mt-0.5">
-                          {editingKnowledgeId ? "Modify this certified brief to dynamically re-ground the Shurefire pricing brain." : "Write or paste structural wholesale briefs to live-train the Shurefire Gemini pricing context."}
+                          {editingKnowledgeId ? "Modify this certified brief to dynamically re-ground the Shurefire pricing brain." : "Train or crawl structural wholesale briefs to live-train the Shurefire Gemini pricing context."}
                         </p>
                       </div>
 
-                      <form onSubmit={handleUploadKnowledge} className="space-y-4 text-left">
-                        <div>
-                          <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                            Article Title
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={newKnowledgeTitle}
-                            onChange={(e) => setNewKnowledgeTitle(e.target.value)}
-                            placeholder="e.g. Dangote Cement wholesale prices at Ikorodu Terminal"
-                            className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white text-left"
-                          />
+                      {/* Sub-tabs Selection (Only shown when not editing a block) */}
+                      {!editingKnowledgeId && (
+                        <div className="flex border-b border-neutral-200 text-xs font-bold mb-4 gap-4 select-none">
+                          <button
+                            type="button"
+                            onClick={() => setKnowledgeInputMode("manual")}
+                            className={`pb-2 px-1 border-b-2 transition-all cursor-pointer ${
+                              knowledgeInputMode === "manual" ? "border-[#ae2424] text-[#ae2424]" : "border-transparent text-neutral-400 hover:text-neutral-600"
+                            }`}
+                          >
+                            ✍️ Manual Text Entry
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setKnowledgeInputMode("crawler")}
+                            className={`pb-2 px-1 border-b-2 transition-all cursor-pointer ${
+                              knowledgeInputMode === "crawler" ? "border-[#ae2424] text-[#ae2424]" : "border-transparent text-neutral-400 hover:text-neutral-600"
+                            }`}
+                          >
+                            🔗 URL Web Crawler
+                          </button>
                         </div>
+                      )}
 
-                        <div>
-                          <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
-                            Brief Content (Terminal adjustments, discount codes, etc.)
-                          </label>
-                          <textarea
-                            required
-                            value={newKnowledgeContent}
-                            onChange={(e) => setNewKnowledgeContent(e.target.value)}
-                            placeholder="e.g. Dangote Cement wholesale prices have decreased by 5% to N7,500 per bag starting today due to high stock availability."
-                            rows={6}
-                            className="w-full text-xs border border-neutral-200 rounded-lg p-3 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white text-left"
-                          />
-                        </div>
+                      {editingKnowledgeId || knowledgeInputMode === "manual" ? (
+                        <form onSubmit={handleUploadKnowledge} className="space-y-4 text-left animate-fade-in">
+                          <div>
+                            <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                              Article Title
+                            </label>
+                            <input
+                              type="text"
+                              required
+                              value={newKnowledgeTitle}
+                              onChange={(e) => setNewKnowledgeTitle(e.target.value)}
+                              placeholder="e.g. Dangote Cement wholesale prices at Ikorodu Terminal"
+                              className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white text-left"
+                            />
+                          </div>
 
-                        <div className="flex gap-2">
+                          <div>
+                            <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                              Brief Content (Terminal adjustments, discount codes, etc.)
+                            </label>
+                            <textarea
+                              required
+                              value={newKnowledgeContent}
+                              onChange={(e) => setNewKnowledgeContent(e.target.value)}
+                              placeholder="e.g. Dangote Cement wholesale prices have decreased by 5% to N7,500 per bag starting today due to high stock availability."
+                              rows={6}
+                              className="w-full text-xs border border-neutral-200 rounded-lg p-3 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white text-left"
+                            />
+                          </div>
+
+                          <div className="flex gap-2">
+                            <button
+                              type="submit"
+                              disabled={isUploadingKnowledge}
+                              className="flex-1 bg-[#ae2424] hover:bg-[#8f1d1d] text-white font-black py-3 rounded-xl text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                            >
+                              {isUploadingKnowledge ? (
+                                <>
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  Synchronizing Brain...
+                                </>
+                              ) : (
+                                editingKnowledgeId ? "Save Sovereign Update" : "Train Shurefire AI Brain"
+                              )}
+                            </button>
+
+                            {editingKnowledgeId && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingKnowledgeId(null);
+                                  setNewKnowledgeTitle("");
+                                  setNewKnowledgeContent("");
+                                }}
+                                className="px-4 py-3 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 text-neutral-700 font-extrabold rounded-xl text-xs uppercase cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                            )}
+                          </div>
+                        </form>
+                      ) : (
+                        <form onSubmit={handleCrawlAndInject} className="space-y-4 text-left animate-fade-in">
+                          <div>
+                            <label className="block text-[10px] font-bold text-neutral-400 uppercase tracking-wider mb-1.5">
+                              Supplier / Factory URL (Price sheet, specs catalog, etc.)
+                            </label>
+                            <div className="relative">
+                              <input
+                                id="crawl-url-input"
+                                type="url"
+                                required
+                                disabled={crawlStatus === "crawling" || crawlStatus === "saving"}
+                                value={crawlUrl}
+                                onChange={(e) => setCrawlUrl(e.target.value)}
+                                placeholder="https://factorysupplier.com/pricelist"
+                                className="w-full text-xs border border-neutral-200 rounded-lg p-2.5 pl-8 bg-neutral-50 text-neutral-900 focus:outline-none focus:border-[#ae2424] focus:bg-white text-left disabled:opacity-60"
+                              />
+                              <span className="absolute left-2.5 top-2.5 text-xs text-neutral-400">🔗</span>
+                            </div>
+                            <p className="text-[10px] text-neutral-400 mt-1">
+                              Paste any direct link or supplier list. CORS blocks will be securely bypassed and the page content parsed into markdown.
+                            </p>
+                          </div>
+
+                          {crawlMessage && (
+                            <div className={`text-[11px] p-3 rounded-lg font-medium text-left flex items-start gap-2 ${
+                              crawlStatus === "error" 
+                                ? "bg-red-50 border border-red-100 text-red-700" 
+                                : crawlStatus === "success" 
+                                ? "bg-emerald-50 border border-emerald-100 text-emerald-700" 
+                                : "bg-amber-50 border border-amber-100 text-amber-700 animate-pulse"
+                            }`}>
+                              <span className="shrink-0 font-bold">
+                                {crawlStatus === "crawling" && "🕵️"}
+                                {crawlStatus === "saving" && "💾"}
+                                {crawlStatus === "success" && "✅"}
+                                {crawlStatus === "error" && "⚠️"}
+                              </span>
+                              <span className="leading-normal">{crawlMessage}</span>
+                            </div>
+                          )}
+
                           <button
                             type="submit"
-                            disabled={isUploadingKnowledge}
-                            className="flex-1 bg-[#ae2424] hover:bg-[#8f1d1d] text-white font-black py-3 rounded-xl text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+                            disabled={crawlStatus === "crawling" || crawlStatus === "saving" || !crawlUrl.trim()}
+                            className="w-full bg-[#ae2424] hover:bg-[#8f1d1d] disabled:bg-neutral-300 disabled:text-neutral-500 text-white font-black py-3 rounded-xl text-xs uppercase tracking-widest transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
                           >
-                            {isUploadingKnowledge ? (
+                            {crawlStatus === "crawling" || crawlStatus === "saving" ? (
                               <>
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                Synchronizing Brain...
+                                {crawlStatus === "crawling" ? "Crawling website..." : "Saving to database..."}
                               </>
                             ) : (
-                              editingKnowledgeId ? "Save Sovereign Update" : "Train Shurefire AI Brain"
+                              "Scrape & Inject Link"
                             )}
                           </button>
-
-                          {editingKnowledgeId && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingKnowledgeId(null);
-                                setNewKnowledgeTitle("");
-                                setNewKnowledgeContent("");
-                              }}
-                              className="px-4 py-3 bg-neutral-100 hover:bg-neutral-200 border border-neutral-200 text-neutral-700 font-extrabold rounded-xl text-xs uppercase cursor-pointer"
-                            >
-                              Cancel
-                            </button>
-                          )}
-                        </div>
-                      </form>
+                        </form>
+                      )}
                     </div>
 
                     {/* Right Column: Active trained knowledge blocks */}
@@ -2282,35 +2537,73 @@ export default function App() {
                       </div>
 
                       <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
-                        {knowledgeBlocks.map((block) => (
-                          <div key={block.id} className="bg-white border border-neutral-200 rounded-xl p-4 shadow-3xs relative space-y-2">
-                            <div className="flex justify-between items-center border-b border-neutral-100 pb-2">
-                              <h3 className="text-xs font-black text-neutral-900 uppercase tracking-tight">
-                                {block.title || "Trade Briefing"}
-                              </h3>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  onClick={() => handleEditKnowledge(block)}
-                                  className="text-[10px] font-bold text-neutral-500 hover:text-neutral-900 transition-colors bg-neutral-50 px-2.5 py-1 rounded border border-neutral-200 cursor-pointer"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteKnowledge(block.id)}
-                                  className="text-[10px] font-bold text-[#ae2424] hover:text-[#8f1d1d] transition-colors bg-[#ae2424]/5 px-2.5 py-1 rounded border border-[#ae2424]/10 cursor-pointer"
-                                >
-                                  Delete
-                                </button>
+                        {knowledgeBlocks.map((block) => {
+                          const isCrawled = block.title?.toLowerCase().startsWith("crawl:") || block.content_text?.includes("SOURCE URL:");
+                          let extractedSourceUrl = "";
+                          let sourceDomain = "";
+                          
+                          if (isCrawled && block.content_text) {
+                            const match = block.content_text.match(/SOURCE URL:\s*([^\s\n]+)/);
+                            if (match && match[1]) {
+                              extractedSourceUrl = match[1];
+                              sourceDomain = getDomainName(extractedSourceUrl);
+                            }
+                          }
+
+                          return (
+                            <div key={block.id} className="bg-white border border-neutral-200 rounded-xl p-4 shadow-3xs relative space-y-2">
+                              <div className="flex justify-between items-center border-b border-neutral-100 pb-2">
+                                <div className="space-y-1">
+                                  <h3 className="text-xs font-black text-neutral-900 uppercase tracking-tight">
+                                    {block.title || "Trade Briefing"}
+                                  </h3>
+                                  <div className="flex items-center gap-2 pt-0.5">
+                                    {isCrawled ? (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-50 border border-blue-150 rounded text-[9px] text-blue-700 font-extrabold tracking-wider uppercase select-none">
+                                        <span>🔗 Crawled</span>
+                                        {sourceDomain && (
+                                          <a 
+                                            href={extractedSourceUrl} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer" 
+                                            className="underline hover:text-blue-900 ml-1 font-bold"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            ({sourceDomain})
+                                          </a>
+                                        )}
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-neutral-100 border border-neutral-200 rounded text-[9px] text-neutral-600 font-extrabold tracking-wider uppercase select-none">
+                                        ✍️ Entered Manually
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => handleEditKnowledge(block)}
+                                    className="text-[10px] font-bold text-neutral-500 hover:text-neutral-900 transition-colors bg-neutral-50 px-2.5 py-1 rounded border border-neutral-200 cursor-pointer"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteKnowledge(block.id)}
+                                    className="text-[10px] font-bold text-[#ae2424] hover:text-[#8f1d1d] transition-colors bg-[#ae2424]/5 px-2.5 py-1 rounded border border-[#ae2424]/10 cursor-pointer"
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                              <p className="text-xs text-neutral-700 leading-relaxed font-sans text-left whitespace-pre-wrap pt-1">
+                                {block.content || block.content_text}
+                              </p>
+                              <div className="text-[9px] text-neutral-400 font-mono pt-1 text-right">
+                                Last updated: {block.updatedAt || block.createdAt ? new Date(block.updatedAt || block.createdAt).toLocaleString() : "Recently"}
                               </div>
                             </div>
-                            <p className="text-xs text-neutral-700 leading-relaxed font-sans text-left whitespace-pre-wrap pt-1">
-                              {block.content || block.content_text}
-                            </p>
-                            <div className="text-[9px] text-neutral-400 font-mono pt-1 text-right">
-                              Last updated: {block.updatedAt || block.createdAt ? new Date(block.updatedAt || block.createdAt).toLocaleString() : "Recently"}
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
 
                         {knowledgeBlocks.length === 0 && (
                           <div className="bg-white border border-neutral-200 rounded-2xl p-12 text-center text-neutral-400">
