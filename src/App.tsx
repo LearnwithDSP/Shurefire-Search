@@ -868,7 +868,8 @@ export default function App() {
           query: activeQuery,
           region: "Lagos",
           category: "all",
-          crawledBlocks: source === 'crawled' ? semanticResults : []
+          crawledBlocks: source === 'crawled' ? semanticResults : [],
+          forceRefresh: true
         })
       });
 
@@ -881,6 +882,11 @@ export default function App() {
 
       if (data && data.grandTotal) {
         setEstimate(data);
+        if (data.searchResults && data.searchResults.length > 0) {
+          setSearchResults(data.searchResults);
+          const hasCrawled = data.searchResults.some((r: any) => r.isCrawled);
+          setSearchSource(hasCrawled ? "crawled" : "fallback");
+        }
         setSearchStats({
           resultsCount: data.groundingSources?.length ? data.groundingSources.length * 1450 : Math.floor(Math.random() * 210000) + 14000,
           duration: Number(duration.toFixed(2))
@@ -1882,63 +1888,91 @@ export default function App() {
                         <div 
                           id={`doc-${resultKey}`}
                           key={resultKey} 
-                          className={`bg-white border ${isExpanded ? 'border-blue-400 ring-1 ring-blue-400/20 shadow-xs' : 'border-neutral-200/90 hover:border-neutral-300'} rounded-2xl p-5 shadow-3xs transition-all relative overflow-hidden select-text`}
+                          className={`bg-white border ${isExpanded ? 'border-blue-400 ring-1 ring-blue-400/20 shadow-xs' : 'border-neutral-200/90 hover:border-neutral-300'} rounded-2xl p-6 transition-all relative overflow-hidden select-text text-left`}
                         >
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-neutral-50 pb-2.5">
-                            {/* Top Row: Document Title / Material Class (Click to expand) */}
-                            <h4 
-                              className="text-xl font-semibold text-slate-900 hover:text-blue-600 transition-colors cursor-pointer"
-                              onClick={() => setExpandedResultId(isExpanded ? null : resultKey)}
-                            >
-                              {result.title}
-                            </h4>
-
-                            <div className="flex items-center gap-2 shrink-0 select-none">
+                          {/* Google SERP Breadcrumb/Site Info (Url & SiteName) */}
+                          <div className="flex items-center gap-2.5 select-none mb-1.5">
+                            <div className="flex items-center justify-center h-6 w-6 rounded-full bg-neutral-100 border border-neutral-200 text-neutral-600 font-bold text-[10px]">
+                              🌐
+                            </div>
+                            <div className="flex flex-col text-left">
+                              <span className="text-[12px] font-semibold text-neutral-900 leading-tight">
+                                {result.siteName || "Sovereign Intelligence"}
+                              </span>
+                              <span className="text-[11px] text-neutral-500 leading-none truncate max-w-xs sm:max-w-md">
+                                {result.url || "https://shurefire.ng"}
+                              </span>
+                            </div>
+                            
+                            <div className="ml-auto flex items-center gap-2 shrink-0">
                               {/* Badge System */}
                               {result.isCrawled ? (
-                                <span className="inline-flex items-center px-2.5 py-0.5 bg-emerald-50 border border-emerald-150 rounded-full text-xs font-bold text-emerald-700">
+                                <span className="inline-flex items-center px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-full text-[10px] font-bold text-emerald-700">
                                   [Verified Crawl]
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center px-2.5 py-0.5 bg-slate-50 border border-slate-200 rounded-full text-xs font-bold text-slate-600">
+                                <span className="inline-flex items-center px-2 py-0.5 bg-slate-50 border border-slate-200 rounded-full text-[10px] font-bold text-slate-600">
                                   [Factory Direct]
                                 </span>
                               )}
 
                               {/* Relevance/Similarity Score */}
                               {result.isCrawled && result.similarity && (
-                                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
-                                  {Math.round(result.similarity * 100)}% Match Context
+                                <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                                  {Math.round(result.similarity * 100)}% Match
                                 </span>
                               )}
                             </div>
                           </div>
 
+                          {/* Google SERP Title in blue clickable format */}
+                          <h4 
+                            className="text-[19px] sm:text-[20px] font-sans font-normal text-[#1a0dab] hover:underline cursor-pointer leading-snug mt-1 text-left"
+                            onClick={() => setExpandedResultId(isExpanded ? null : resultKey)}
+                          >
+                            {result.title}
+                          </h4>
+
                           {/* Excerpt Snippet or Full Text */}
                           {isExpanded ? (
-                            <div 
-                              className="prose max-h-96 overflow-y-auto mt-4 pt-4 border-t border-slate-200 text-slate-700 text-sm leading-relaxed whitespace-pre-wrap select-text"
-                            >
-                              {result.content}
-                              <button
-                                type="button"
-                                className="mt-4 text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 transition-colors text-xs select-none cursor-pointer"
-                                onClick={() => setExpandedResultId(null)}
+                            <div className="mt-4 pt-4 border-t border-slate-150">
+                              <div 
+                                className="prose max-h-[500px] overflow-y-auto text-slate-700 text-[14px] leading-relaxed whitespace-pre-wrap select-text text-left font-sans bg-slate-50/50 p-4 rounded-xl border border-neutral-150"
                               >
-                                Click to collapse text ↑
-                              </button>
+                                {result.content}
+                              </div>
+                              <div className="mt-4 flex items-center gap-4">
+                                <button
+                                  type="button"
+                                  className="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 transition-colors text-xs select-none cursor-pointer"
+                                  onClick={() => setExpandedResultId(null)}
+                                >
+                                  Click to collapse text ↑
+                                </button>
+                                
+                                {result.url && result.url.includes("wa.me") && (
+                                  <a
+                                    href={result.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer select-none"
+                                  >
+                                    💬 Chat on WhatsApp
+                                  </a>
+                                )}
+                              </div>
                             </div>
                           ) : (
-                            <div className="mt-2.5 space-y-1.5">
-                              <p className="text-sm text-slate-600 line-clamp-2 leading-relaxed">
-                                {result.content}
+                            <div className="mt-1.5 space-y-1.5">
+                              <p className="text-[14px] text-neutral-600 leading-relaxed text-left font-sans font-normal line-clamp-2">
+                                {result.snippet || result.content}
                               </p>
                               <button
                                 type="button"
-                                className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors pt-1 cursor-pointer"
+                                className="text-xs font-semibold text-blue-600 hover:text-[#1a0dab] hover:underline transition-colors pt-1 cursor-pointer"
                                 onClick={() => setExpandedResultId(resultKey)}
                               >
-                                Click to read full intelligence text →
+                                Click to read full intelligence text & detailed explanation →
                               </button>
                             </div>
                           )}

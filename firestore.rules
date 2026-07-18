@@ -68,7 +68,7 @@ service cloud.firestore {
     // Search cache validation helper
     function isValidSearchCache(data) {
       return data.keys().hasAll(['queryKey', 'query', 'region', 'category', 'projectTitle', 'isDuplex', 'isSwampy', 'isPremium', 'isBasic', 'intent_type', 'finish_tier', 'quickAnswer', 'featuredAnswer', 'substructure', 'wallingRoofing', 'finishes', 'substructureTotal', 'wallingRoofingTotal', 'finishesTotal', 'deliveryLogistics', 'grandTotal', 'searchResults', 'sovereignRates', 'groundingSources', 'lastUpdated'])
-        && data.keys().size() == 25
+        && data.keys().size() >= 25
         && data.queryKey is string && data.queryKey.size() <= 256
         && data.query is string && data.query.size() <= 512
         && data.region is string && data.region.size() <= 128
@@ -85,11 +85,11 @@ service cloud.firestore {
         && data.substructure is list && data.substructure.size() <= 100
         && data.wallingRoofing is list && data.wallingRoofing.size() <= 100
         && data.finishes is list && data.finishes.size() <= 100
-        && data.substructureTotal is int && data.substructureTotal >= 0
-        && data.wallingRoofingTotal is int && data.wallingRoofingTotal >= 0
-        && data.finishesTotal is int && data.finishesTotal >= 0
-        && data.deliveryLogistics is int && data.deliveryLogistics >= 0
-        && data.grandTotal is int && data.grandTotal >= 0
+        && (data.substructureTotal is int || data.substructureTotal is float) && data.substructureTotal >= 0
+        && (data.wallingRoofingTotal is int || data.wallingRoofingTotal is float) && data.wallingRoofingTotal >= 0
+        && (data.finishesTotal is int || data.finishesTotal is float) && data.finishesTotal >= 0
+        && (data.deliveryLogistics is int || data.deliveryLogistics is float) && data.deliveryLogistics >= 0
+        && (data.grandTotal is int || data.grandTotal is float) && data.grandTotal >= 0
         && data.searchResults is list && data.searchResults.size() <= 20
         && data.sovereignRates is list && data.sovereignRates.size() <= 50
         && data.groundingSources is list && data.groundingSources.size() <= 50

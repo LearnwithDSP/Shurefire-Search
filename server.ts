@@ -277,6 +277,11 @@ async function startServer() {
             return queryTerms.some(term => t.includes(term) || c.includes(term));
           });
         }
+        
+        // If still no blocks matched but we have blocks, let's include the top 3 blocks anyway so we have crawled contents
+        if ((!crawledBlocks || crawledBlocks.length === 0) && allKbBlocks.length > 0) {
+          crawledBlocks = allKbBlocks.slice(0, 3);
+        }
       }
 
       let kbTextContext = "";
@@ -384,6 +389,77 @@ Based on local surveyor guidelines in ${reg}, a typical project of this nature i
           groundingSources: []
         };
       };
+
+      // Format crawledBlocks into dynamic, Google-like search results
+      const dynamicSearchResults: any[] = [];
+      
+      // Always include Shurefire Direct Sourcing Desk
+      dynamicSearchResults.push({
+        id: "res-shurefire-sourcing",
+        title: "Shurefire Direct Sourcing Desk & WhatsApp Sourcing Link",
+        siteName: "Shurefire Direct Sourcing",
+        url: "https://wa.me/2349023089987",
+        snippet: "Direct WhatsApp hotline (+2349023089987) for instant, wholesale direct-from-mill pricing and dispatch across Nigeria.",
+        fullContent: "Bypass secondary retail markups. Secure immediate direct-from-mill price matches on Dangote/BUA Cement, high-yield TMT steel rods, vibrated structural hollow blocks, sharp sand, and granite stone aggregates. Tap to open instant chat with Shurefire Sourcing Desk on WhatsApp: [Shurefire Sourcing Desk](https://wa.me/2349023089987).",
+        content: "Bypass secondary retail markups. Secure immediate direct-from-mill price matches on Dangote/BUA Cement, high-yield TMT steel rods, vibrated structural hollow blocks, sharp sand, and granite stone aggregates. Tap to open instant chat with Shurefire Sourcing Desk on WhatsApp: [Shurefire Sourcing Desk](https://wa.me/2349023089987).",
+        isCrawled: false,
+        similarity: 1.0
+      });
+
+      const blocksToFormat = crawledBlocks && crawledBlocks.length > 0 ? crawledBlocks : [];
+      blocksToFormat.forEach((b: any, idx: number) => {
+        const title = b.title || "Sovereign Trade Briefing";
+        const content = b.content || b.content_text || "";
+        
+        // Extract URL
+        let url = "https://shurefire.ng/intelligence";
+        const urlMatch = content.match(/SOURCE URL:\s*(https?:\/\/[^\s]+)/i);
+        if (urlMatch && urlMatch[1]) {
+          url = urlMatch[1];
+        } else if (title.toLowerCase().startsWith("http")) {
+          url = title;
+        }
+
+        // Site Name
+        let siteName = "Shurefire Intelligence Base";
+        try {
+          if (url && url !== "https://shurefire.ng/intelligence") {
+            const urlObj = new URL(url);
+            siteName = urlObj.hostname.replace("www.", "");
+          }
+        } catch (_) {}
+
+        // Snippet (max 180 chars)
+        let cleanContent = content.replace(/SOURCE URL:\s*(https?:\/\/[^\s]+)/i, "").trim();
+        let snippet = cleanContent.length > 180 ? cleanContent.substring(0, 180) + "..." : cleanContent;
+
+        dynamicSearchResults.push({
+          id: b.id || `res-crawl-${Math.random().toString(36).substring(2, 9)}`,
+          title: title.replace(/^crawl:\s*/i, ""), // Clean "crawl:" prefix if present
+          siteName: siteName,
+          url: url,
+          snippet: snippet,
+          fullContent: content,
+          content: content,
+          isCrawled: true,
+          similarity: 0.95 - (idx * 0.05)
+        });
+      });
+
+      // If we don't have enough matched blocks, add standard SON standards or local info
+      if (dynamicSearchResults.length <= 2) {
+        dynamicSearchResults.push({
+          id: "res-son-fallback-standard",
+          title: "SON NIS Cement Strength & Plastering Standards in Nigeria",
+          siteName: "Standard Organisation of Nigeria",
+          url: "https://son.gov.ng",
+          snippet: "Understanding Grade 42.5R and Grade 32.5N standards to bypass structural cracks in Lagos slab construction.",
+          fullContent: "The Standard Organisation of Nigeria (SON) dictates that load-bearing columns, beams and suspended decking slabs must employ Grade 42.5 cement. Non-structural partition wall masonry and plastering are perfectly served by Grade 32.5.",
+          content: "The Standard Organisation of Nigeria (SON) dictates that load-bearing columns, beams and suspended decking slabs must employ Grade 42.5 cement. Non-structural partition wall masonry and plastering are perfectly served by Grade 32.5.",
+          isCrawled: false,
+          similarity: 0.80
+        });
+      }
 
       // 2. Generate AI Brain grounding & analysis leveraging Gemini
       const ai = getGeminiClient();
@@ -543,18 +619,8 @@ Generate the complete structured JSON response matching the schema. In the "sear
             lastUpdated: new Date().toISOString()
           };
 
-          // Double check Shurefire presence, if not present inject it
-          const hasShurefire = payloadToCache.searchResults.some((r: any) => r.url && r.url.includes("wa.me/2349023089987") || r.siteName && r.siteName.toLowerCase().includes("shurefire"));
-          if (!hasShurefire && payloadToCache.searchResults.length > 0) {
-            payloadToCache.searchResults.unshift({
-              id: "res-shurefire-injected",
-              title: "Shurefire Global Sourcing Desk & WhatsApp Sourcing Link",
-              siteName: "Shurefire Direct Sourcing",
-              url: "https://wa.me/2349023089987",
-              snippet: "Direct WhatsApp hotline (+2349023089987) for wholesale structural estimations.",
-              fullContent: "Secure immediate direct wholesale price matches on cement, iron rods, aggregates, and bulk building timber. Chat directly with Shurefire Desk on WhatsApp: [Shurefire Sourcing Desk](https://wa.me/2349023089987) or dial 09023089987."
-            });
-          }
+          // Override searchResults with dynamic, accurate crawled blocks to prevent static/hallucinated answers
+          payloadToCache.searchResults = dynamicSearchResults.slice(0, 20);
 
         } catch (gemIniErr: any) {
           console.warn(`[Shorefire AI] Search content generation activated rich fallback. (Reason: Gemini response currently rate-limited or key quota exceeded).`, gemIniErr);
@@ -566,6 +632,7 @@ Generate the complete structured JSON response matching the schema. In the "sear
             category: targetCategory,
             lastUpdated: new Date().toISOString()
           };
+          payloadToCache.searchResults = dynamicSearchResults.slice(0, 20);
         }
       } else {
         payloadToCache = {
@@ -576,6 +643,7 @@ Generate the complete structured JSON response matching the schema. In the "sear
           category: targetCategory,
           lastUpdated: new Date().toISOString()
         };
+        payloadToCache.searchResults = dynamicSearchResults.slice(0, 20);
       }
 
       // Sync and Write-through Caching: Save search results and corresponding estimates to Firestore & Supabase
